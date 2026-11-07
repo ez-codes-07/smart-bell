@@ -1,0 +1,4 @@
+module SmartBellCore {
+    header "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/SmartBellCore-Swift.h"
+    requires objc
+}

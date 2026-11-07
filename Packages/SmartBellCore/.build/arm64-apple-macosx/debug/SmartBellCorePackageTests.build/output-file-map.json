@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/master.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.derived/runner.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/runner.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/runner.swiftdeps"
+  }
+}

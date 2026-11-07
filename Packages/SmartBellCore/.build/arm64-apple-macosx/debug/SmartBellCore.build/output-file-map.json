@@ -1,0 +1,107 @@
+{
+  "": {
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/master.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Calibration/Calibration.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Calibration.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Calibration.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Calibration~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Calibration.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Demo/DemoMotionSynthesizer.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoMotionSynthesizer.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoMotionSynthesizer.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoMotionSynthesizer~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoMotionSynthesizer.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Demo/DemoSensorSource.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoSensorSource.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoSensorSource.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoSensorSource~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/DemoSensorSource.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Exercises/ExerciseRules.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ExerciseRules.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ExerciseRules.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ExerciseRules~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ExerciseRules.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Form/FormAnalyzer.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/FormAnalyzer.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/FormAnalyzer.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/FormAnalyzer~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/FormAnalyzer.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Math/Vector3.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Vector3.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Vector3.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Vector3~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/Vector3.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Processing/OrientationFilter.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/OrientationFilter.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/OrientationFilter.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/OrientationFilter~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/OrientationFilter.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Processing/ProgressSignal.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSignal.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSignal.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSignal~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSignal.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Protocol/BLEProtocolConfig.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/BLEProtocolConfig.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/BLEProtocolConfig.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/BLEProtocolConfig~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/BLEProtocolConfig.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Protocol/PacketDecoder.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/PacketDecoder.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/PacketDecoder.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/PacketDecoder~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/PacketDecoder.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Reps/RepDetector.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepDetector.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepDetector.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepDetector~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepDetector.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Sensor/SensorSample.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/SensorSample.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/SensorSample.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/SensorSample~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/SensorSample.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Session/RepTracker.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepTracker.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepTracker.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepTracker~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/RepTracker.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Storage/AppSettings.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/AppSettings.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/AppSettings.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/AppSettings~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/AppSettings.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Storage/ProgressSummary.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSummary.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSummary.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSummary~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/ProgressSummary.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Storage/WorkoutModels.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutModels.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutModels.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutModels.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Sources/SmartBellCore/Storage/WorkoutStore.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutStore.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutStore.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCore.build/WorkoutStore.swiftdeps"
+  }
+}

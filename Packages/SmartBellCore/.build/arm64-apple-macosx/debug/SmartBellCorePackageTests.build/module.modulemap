@@ -1,0 +1,4 @@
+module SmartBellCorePackageTests {
+    header "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCorePackageTests.build/SmartBellCorePackageTests-Swift.h"
+    requires objc
+}

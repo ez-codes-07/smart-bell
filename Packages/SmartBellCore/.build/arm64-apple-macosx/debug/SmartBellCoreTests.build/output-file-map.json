@@ -1,0 +1,29 @@
+{
+  "": {
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/master.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Tests/SmartBellCoreTests/PacketDecoderTests.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PacketDecoderTests.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PacketDecoderTests.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PacketDecoderTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PacketDecoderTests.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Tests/SmartBellCoreTests/PipelineTests.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PipelineTests.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PipelineTests.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PipelineTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/PipelineTests.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Tests/SmartBellCoreTests/RepDetectorTests.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/RepDetectorTests.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/RepDetectorTests.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/RepDetectorTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/RepDetectorTests.swiftdeps"
+  },
+  "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/Tests/SmartBellCoreTests/StorageTests.swift": {
+    "dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/StorageTests.d",
+    "object": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/StorageTests.swift.o",
+    "swiftmodule": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/StorageTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/ashtonjiang/Projects/smart-bell/Packages/SmartBellCore/.build/arm64-apple-macosx/debug/SmartBellCoreTests.build/StorageTests.swiftdeps"
+  }
+}
