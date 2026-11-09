@@ -13,6 +13,7 @@
 		A10000000000000000000004 /* MotionAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* MotionAnalyzer.swift */; };
 		A10000000000000000000005 /* WorkoutStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* WorkoutStore.swift */; };
 		A10000000000000000000006 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* ContentView.swift */; };
+		A10000000000000000000007 /* SensorReadingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SensorReadingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 		B10000000000000000000006 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B10000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000008 /* SmartBell.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmartBell.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000009 /* SensorReadingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorReadingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +52,7 @@
 			children = (
 				B10000000000000000000001 /* SmartBellApp.swift */,
 				B10000000000000000000006 /* ContentView.swift */,
+				B10000000000000000000009 /* SensorReadingsView.swift */,
 				C10000000000000000000004 /* Backend */,
 				B10000000000000000000007 /* Info.plist */,
 			);
@@ -143,6 +146,7 @@
 				A10000000000000000000004 /* MotionAnalyzer.swift in Sources */,
 				A10000000000000000000005 /* WorkoutStore.swift in Sources */,
 				A10000000000000000000006 /* ContentView.swift in Sources */,
+				A10000000000000000000007 /* SensorReadingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,7 +158,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 			};
@@ -165,7 +169,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 			};
@@ -178,7 +182,7 @@
 				DEVELOPMENT_TEAM = Q3GS7UBNR9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SmartBell/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.smartbell.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -193,7 +197,7 @@
 				DEVELOPMENT_TEAM = Q3GS7UBNR9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SmartBell/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.smartbell.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;

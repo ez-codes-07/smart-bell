@@ -4,7 +4,7 @@ Smart Bell is a native SwiftUI iOS app for tracking dumbbell repetitions using a
 
 ## Open and run
 
-Open `SmartBell.xcodeproj` in Xcode, select the **SmartBell** scheme, choose an iPhone simulator or device, then Run. The deployment target is iOS 17. No third-party packages are required. BLE hardware use requires a physical iPhone; the **Device → Try demo sensor** option streams simulated motion data for simulator use.
+Open `SmartBell.xcodeproj` in Xcode, select the **SmartBell** scheme, choose an iPhone simulator or device, then Run. The deployment target is iOS 26. No third-party packages are required. BLE hardware use requires a physical iPhone; the **Device → Try demo sensor** option streams simulated motion data for simulator use.
 
 ## Current BLE assumptions
 
@@ -14,7 +14,8 @@ The ESP32 should advertise a local name containing `SmartBell`. The app discover
 ax,ay,az,gx,gy,gz
 ```
 
-Acceleration is in g; angular velocity is in degrees per second. The phone timestamps each received sample. Update `BLEConfiguration` in `SmartBell/Backend/Models.swift` with service and characteristic UUIDs when finalized, and adapt `parse(_:)` in `SmartBell/Backend/BLEDeviceManager.swift` for the actual packet encoding, units, and timestamps. The ESP32 should send reasonably frequent samples (about 50 Hz or higher) and notify the app.
+The current app decoder expects acceleration in m/s² and angular velocity in degrees per second. The phone timestamps each received sample. Update `BLEConfiguration` in `SmartBell/Backend/Models.swift` with service and characteristic UUIDs when finalized, and adapt `parse(_:)` in `SmartBell/Backend/BLEDeviceManager.swift` for the actual packet encoding, units, and timestamps. The ESP32 should send reasonably frequent samples (about 50 Hz or higher) and notify the app.
+
 
 ## Motion analysis limits
 

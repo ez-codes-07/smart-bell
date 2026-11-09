@@ -51,7 +51,7 @@ struct MotionAnalyzer {
         if let previousTimestamp {
             let dt = min(max(sample.timestamp - previousTimestamp, 0), 0.1)
             accumulatedRange += sample.gyroMagnitude * dt
-            accumulatedAccelerationMotion += abs(sample.accelerationMagnitude - 1.0) * dt
+            accumulatedAccelerationMotion += abs(sample.accelerationMagnitude - 9.80665) * dt
             estimatedAngle += signedSpeed * dt
             angleMinimum = min(angleMinimum, estimatedAngle)
             angleMaximum = max(angleMaximum, estimatedAngle)

@@ -9,6 +9,9 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var isConnected = false
     @Published private(set) var latestSample: MotionSample?
     @Published private(set) var usingDemo = false
+    @Published private(set) var sampleCount = 0
+    @Published private(set) var sampleRate = 0.0
+    @Published private(set) var lastSampleDate: Date?
     @Published var errorMessage: String?
 
     private let configuration = BLEConfiguration()
@@ -18,6 +21,8 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private var demoTimer: Timer?
     private var demoClock = 0.0
     private var demoPhase = 0.0
+    private var sampleArrivalTimes: [Date] = []
+    private let standardGravity = 9.80665
 
     override init() {
         super.init()
@@ -72,19 +77,32 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         demoPhase += 0.025 * 2 * .pi / 2.4
         let phase = demoPhase.truncatingRemainder(dividingBy: 2 * .pi)
         let envelope = max(0, sin(phase))
-        let sample = MotionSample(timestamp: t, ax: 0.18 * sin(phase), ay: 0.10 * cos(phase), az: 1.0 - 0.50 * envelope,
+        let sample = MotionSample(timestamp: t, ax: 0.18 * sin(phase) * standardGravity, ay: 0.10 * cos(phase) * standardGravity, az: (1.0 - 0.50 * envelope) * standardGravity,
                                   gx: 0, gy: 115 * cos(phase), gz: 5 * sin(phase))
-        latestSample = sample
+        publish(sample)
     }
 
     private func parse(_ data: Data) {
         guard let text = String(data: data, encoding: .utf8) else { return }
-        // Default demo firmware contract: one UTF-8 CSV row `ax,ay,az,gx,gy,gz` (g and degrees/sec).
+        // Provisional firmware contract: CSV acceleration is in m/s² and gyro is in degrees/sec.
         // Timestamp is supplied by the phone on receipt. Replace this decoder for binary packets as needed.
         let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ",")
         guard parts.count >= 6, let ax = Double(parts[0]), let ay = Double(parts[1]), let az = Double(parts[2]),
               let gx = Double(parts[3]), let gy = Double(parts[4]), let gz = Double(parts[5]) else { return }
-        latestSample = MotionSample(timestamp: Date.timeIntervalSinceReferenceDate, ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz)
+        publish(MotionSample(timestamp: Date.timeIntervalSinceReferenceDate, ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz))
+    }
+
+    private func publish(_ sample: MotionSample) {
+        let now = Date()
+        sampleCount += 1
+        lastSampleDate = now
+        sampleArrivalTimes.append(now)
+        sampleArrivalTimes.removeAll { now.timeIntervalSince($0) > 2.0 }
+        if let first = sampleArrivalTimes.first, sampleArrivalTimes.count > 1 {
+            let elapsed = now.timeIntervalSince(first)
+            sampleRate = elapsed > 0 ? Double(sampleArrivalTimes.count - 1) / elapsed : 0
+        }
+        latestSample = sample
     }
 }
 

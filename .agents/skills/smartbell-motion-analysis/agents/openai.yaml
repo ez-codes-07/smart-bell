@@ -1,0 +1,3 @@
+interface:
+  display_name: "Smart Bell Motion Analysis"
+  short_description: "Tune inertial rep counting and movement feedback"
