@@ -7,20 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6424C4D630A158E2004469A0 /* PositionCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6424C4D530A158D6004469A0 /* PositionCalculator.swift */; };
 		A10000000000000000000001 /* SmartBellApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* SmartBellApp.swift */; };
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* BLEDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* BLEDeviceManager.swift */; };
-		A10000000000000000000004 /* MotionAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* MotionAnalyzer.swift */; };
 		A10000000000000000000005 /* WorkoutStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* WorkoutStore.swift */; };
 		A10000000000000000000006 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* ContentView.swift */; };
 		A10000000000000000000007 /* SensorReadingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SensorReadingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		6424C4D530A158D6004469A0 /* PositionCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionCalculator.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* SmartBellApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartBellApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* BLEDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEDeviceManager.swift; sourceTree = "<group>"; };
-		B10000000000000000000004 /* MotionAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionAnalyzer.swift; sourceTree = "<group>"; };
 		B10000000000000000000005 /* WorkoutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000006 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B10000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -70,9 +70,9 @@
 		C10000000000000000000004 /* Backend */ = {
 			isa = PBXGroup;
 			children = (
+				6424C4D530A158D6004469A0 /* PositionCalculator.swift */,
 				B10000000000000000000002 /* Models.swift */,
 				B10000000000000000000003 /* BLEDeviceManager.swift */,
-				B10000000000000000000004 /* MotionAnalyzer.swift */,
 				B10000000000000000000005 /* WorkoutStore.swift */,
 			);
 			path = Backend;
@@ -141,9 +141,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* SmartBellApp.swift in Sources */,
+				6424C4D630A158E2004469A0 /* PositionCalculator.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* BLEDeviceManager.swift in Sources */,
-				A10000000000000000000004 /* MotionAnalyzer.swift in Sources */,
 				A10000000000000000000005 /* WorkoutStore.swift in Sources */,
 				A10000000000000000000006 /* ContentView.swift in Sources */,
 				A10000000000000000000007 /* SensorReadingsView.swift in Sources */,

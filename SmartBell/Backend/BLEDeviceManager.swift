@@ -8,6 +8,8 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var devices: [CBPeripheral] = []
     @Published private(set) var isConnected = false
     @Published private(set) var latestSample: MotionSample?
+    @Published private(set) var integratedGyroAngles = IntegratedGyroAngles()
+    @Published private(set) var estimatedPosition = PositionEstimate()
     @Published private(set) var usingDemo = false
     @Published private(set) var sampleCount = 0
     @Published private(set) var sampleRate = 0.0
@@ -23,6 +25,10 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private var demoPhase = 0.0
     private var sampleArrivalTimes: [Date] = []
     private let standardGravity = 9.80665
+    private var packetBuffer = Data()
+    private var previousDecodedTimestamp: TimeInterval?
+    private var gyroIntegrator = GyroscopeIntegrator()
+    private var positionCalculator = PositionCalculator()
 
     override init() {
         super.init()
@@ -39,6 +45,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
 
     func connect(_ peripheral: CBPeripheral) {
         central.stopScan()
+        resetIntegratedAngles()
         state = "Connecting to \(peripheral.name ?? "device")…"
         connectedPeripheral = peripheral
         peripheral.delegate = self
@@ -54,13 +61,14 @@ final class BLEDeviceManager: NSObject, ObservableObject {
 
     func startDemo() {
         disconnect()
+        resetIntegratedAngles()
         usingDemo = true
         isConnected = true
         state = "Demo sensor connected"
         demoClock = Date.timeIntervalSinceReferenceDate
         demoPhase = 0
         demoTimer?.invalidate()
-        demoTimer = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { [weak self] _ in
+        demoTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.emitDemoSample() }
         }
     }
@@ -70,29 +78,66 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         if usingDemo { usingDemo = false; isConnected = false; state = "Disconnected" }
     }
 
+    private func resetIntegratedAngles() {
+        gyroIntegrator.reset()
+        integratedGyroAngles = gyroIntegrator.angles
+        positionCalculator.reset()
+        estimatedPosition = positionCalculator.position
+    }
+
     private func emitDemoSample() {
         let now = Date.timeIntervalSinceReferenceDate
         let t = now - demoClock
         // Smooth, exercise-like cycles with gravity direction changing over each repetition.
-        demoPhase += 0.025 * 2 * .pi / 2.4
+        demoPhase += 0.01 * 2 * .pi / 2.4
         let phase = demoPhase.truncatingRemainder(dividingBy: 2 * .pi)
         let envelope = max(0, sin(phase))
-        let sample = MotionSample(timestamp: t, ax: 0.18 * sin(phase) * standardGravity, ay: 0.10 * cos(phase) * standardGravity, az: (1.0 - 0.50 * envelope) * standardGravity,
+        let sample = MotionSample(timestamp: t, deltaTime: 0.01, ax: 0.18 * sin(phase) * standardGravity, ay: 0.10 * cos(phase) * standardGravity, az: (1.0 - 0.50 * envelope) * standardGravity,
                                   gx: 0, gy: 115 * cos(phase), gz: 5 * sin(phase))
         publish(sample)
     }
 
     private func parse(_ data: Data) {
+        // Firmware uses newline-delimited CSV. Buffer notifications because BLE may split or
+        // coalesce lines depending on the negotiated MTU and connection timing.
+        packetBuffer.append(data)
+        let newline = Data([0x0A])
+        while let lineRange = packetBuffer.range(of: newline) {
+            let line = packetBuffer.subdata(in: packetBuffer.startIndex..<lineRange.lowerBound)
+            packetBuffer.removeSubrange(packetBuffer.startIndex..<lineRange.upperBound)
+            parseLine(line)
+        }
+        if packetBuffer.count > 256 { packetBuffer.removeAll(keepingCapacity: true) }
+    }
+
+    private func parseLine(_ data: Data) {
         guard let text = String(data: data, encoding: .utf8) else { return }
-        // Provisional firmware contract: CSV acceleration is in m/s² and gyro is in degrees/sec.
-        // Timestamp is supplied by the phone on receipt. Replace this decoder for binary packets as needed.
-        let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ",")
-        guard parts.count >= 6, let ax = Double(parts[0]), let ay = Double(parts[1]), let az = Double(parts[2]),
-              let gx = Double(parts[3]), let gy = Double(parts[4]), let gz = Double(parts[5]) else { return }
-        publish(MotionSample(timestamp: Date.timeIntervalSinceReferenceDate, ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz))
+        let fields = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ",")
+        guard (fields.count == 6 || fields.count == 7),
+              let ax = Double(fields[0]), let ay = Double(fields[1]), let az = Double(fields[2]),
+              let gx = Double(fields[3]), let gy = Double(fields[4]), let gz = Double(fields[5]),
+              [ax, ay, az, gx, gy, gz].allSatisfy({ $0.isFinite }) else { return }
+
+        let timestamp = Date.timeIntervalSinceReferenceDate
+        let deltaTime: TimeInterval
+        if fields.count == 7 {
+            // Seventh field is dt_s: seconds between successive sensor sample reads.
+            guard let deltaSeconds = Double(fields[6]), deltaSeconds.isFinite,
+                  deltaSeconds > 0, deltaSeconds <= 1 else { return }
+            deltaTime = deltaSeconds
+        } else if let previousDecodedTimestamp {
+            // Backward compatibility with the previous six-field firmware format.
+            deltaTime = max(timestamp - previousDecodedTimestamp, 0.000001)
+        } else {
+            deltaTime = 0.01
+        }
+        previousDecodedTimestamp = timestamp
+        publish(MotionSample(timestamp: timestamp, deltaTime: deltaTime, ax: ax, ay: ay, az: az, gx: gx, gy: gy, gz: gz))
     }
 
     private func publish(_ sample: MotionSample) {
+        integratedGyroAngles = gyroIntegrator.add(sample)
+        estimatedPosition = positionCalculator.add(sample)
         let now = Date()
         sampleCount += 1
         lastSampleDate = now
