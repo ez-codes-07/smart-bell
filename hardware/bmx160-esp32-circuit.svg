@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-labelledby="title desc">
+  <title id="title">Smart Bell BMX160 and ESP32 I2C circuit</title>
+  <desc id="desc">Breadboard prototype wiring diagram showing ESP32 connected directly to a BMX160 breakout over I2C, with optional CSB and SDO connections.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #18212f; }
+      .label { font-size: 17px; font-weight: 600; }
+      .pin { font-size: 15px; }
+      .small { font-size: 14px; fill: #475569; }
+      .title { font-size: 27px; font-weight: 700; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2.5; rx: 14; }
+      .module { fill: #e0f2fe; stroke: #0369a1; stroke-width: 2.5; rx: 14; }
+      .power { stroke: #dc2626; stroke-width: 4; fill: none; }
+      .ground { stroke: #334155; stroke-width: 4; fill: none; }
+      .sda { stroke: #2563eb; stroke-width: 4; fill: none; }
+      .scl { stroke: #16a34a; stroke-width: 4; fill: none; }
+      .optional { stroke: #9333ea; stroke-width: 3; stroke-dasharray: 8 7; fill: none; }
+      .node { fill: white; stroke: #64748b; stroke-width: 2; }
+    </style>
+  </defs>
+  <rect width="1100" height="650" fill="#ffffff"/>
+  <text x="50" y="52" class="title">Smart Bell sensor prototype · I²C wiring</text>
+  <text x="50" y="82" class="small">Connect the BMX160 breakout directly to the ESP32. Arduino Uno is not used in this circuit.</text>
+
+  <!-- ESP32 -->
+  <rect x="95" y="145" width="330" height="390" class="box"/>
+  <text x="260" y="185" text-anchor="middle" class="label">ESP32 development board</text>
+  <text x="130" y="246" class="pin">3V3</text><circle cx="380" cy="240" r="7" class="node"/>
+  <text x="130" y="306" class="pin">GND</text><circle cx="380" cy="300" r="7" class="node"/>
+  <text x="130" y="366" class="pin">GPIO 21 · SDA</text><circle cx="380" cy="360" r="7" class="node"/>
+  <text x="130" y="426" class="pin">GPIO 22 · SCL</text><circle cx="380" cy="420" r="7" class="node"/>
+  <text x="130" y="486" class="pin">BLE → iPhone</text>
+  <text x="260" y="512" text-anchor="middle" class="small">Use the pin labels for your specific ESP32 board.</text>
+
+  <!-- Sensor -->
+  <rect x="690" y="200" width="310" height="280" class="module"/>
+  <text x="845" y="240" text-anchor="middle" class="label">BMX160 breakout</text>
+  <text x="730" y="294" class="pin">VCC / VIN</text><circle cx="720" cy="288" r="7" class="node"/>
+  <text x="730" y="344" class="pin">GND</text><circle cx="720" cy="338" r="7" class="node"/>
+  <text x="730" y="394" class="pin">SDA</text><circle cx="720" cy="388" r="7" class="node"/>
+  <text x="730" y="444" class="pin">SCL</text><circle cx="720" cy="438" r="7" class="node"/>
+
+  <!-- Primary connections -->
+  <path d="M380 240 H540 V288 H720" class="power"/><text x="546" y="275" class="small" fill="#b91c1c">3.3 V</text>
+  <path d="M380 300 H505 V338 H720" class="ground"/><text x="530" y="326" class="small">GND</text>
+  <path d="M380 360 H570 V388 H720" class="sda"/><text x="570" y="376" class="small" fill="#1d4ed8">SDA</text>
+  <path d="M380 420 H610 V438 H720" class="scl"/><text x="610" y="426" class="small" fill="#15803d">SCL</text>
+
+  <!-- Notes -->
+  <rect x="95" y="565" width="905" height="55" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5" rx="8"/>
+  <text x="115" y="589" class="small">Power note: confirm the breakout’s VCC/VIN range before powering. Keep ESP32 logic at 3.3 V;</text>
+  <text x="115" y="609" class="small">do not connect the Uno’s 5 V rail to ESP32 GPIO or to a 3.3 V-only sensor board.</text>
+
+  <!-- Optional strap hints -->
+  <text x="690" y="520" class="small" fill="#7e22ce">Optional only if exposed and required by breakout:</text>
+  <text x="690" y="543" class="small" fill="#7e22ce">CSB → 3V3 for I²C; SDO/SA0 → GND or 3V3 selects address.</text>
+</svg>

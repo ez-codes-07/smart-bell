@@ -8,13 +8,14 @@ struct SmartBellRootView: View {
         TabView {
             HomeView().tabItem { Label("Home", systemImage: "house") }
             WorkoutView().tabItem { Label("Workout", systemImage: "figure.strengthtraining.traditional") }
+            SensorReadingsView().tabItem { Label("Sensor Readings", systemImage: "waveform.path.ecg") }
             DeviceView().tabItem { Label("Device", systemImage: "dot.radiowaves.left.and.right") }
             HistoryView().tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
         }.tint(Color(red: 0.12, green: 0.35, blue: 0.28))
     }
 }
 
-private enum Palette {
+enum Palette {
     static let ink = Color(red: 0.10, green: 0.16, blue: 0.14)
     static let green = Color(red: 0.12, green: 0.35, blue: 0.28)
     static let mint = Color(red: 0.84, green: 0.93, blue: 0.88)
@@ -232,7 +233,7 @@ struct WorkoutView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Circle().fill(device.isConnected ? .green : .red).frame(width: 8, height: 8); Text(device.state).font(.subheadline.weight(.semibold)) }
             if let s = device.latestSample {
-                Text(String(format: "Accel  %.2f  %.2f  %.2f g", s.ax, s.ay, s.az)).font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text(String(format: "Accel  %.2f  %.2f  %.2f m/s²", s.ax, s.ay, s.az)).font(.caption.monospaced()).foregroundStyle(.secondary)
                 Text(String(format: "Gyro   %.1f  %.1f  %.1f °/s", s.gx, s.gy, s.gz)).font(.caption.monospaced()).foregroundStyle(.secondary)
             } else { Text("Waiting for sensor samples").font(.caption).foregroundStyle(.secondary) }
         }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 15))
@@ -279,12 +280,12 @@ struct DeviceView: View {
                     if let sample = device.latestSample {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("LIVE SENSOR DATA").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
-                            Text(String(format: "Acceleration  %.3f, %.3f, %.3f g", sample.ax, sample.ay, sample.az)).font(.caption.monospaced())
+                            Text(String(format: "Acceleration  %.2f, %.2f, %.2f m/s²", sample.ax, sample.ay, sample.az)).font(.caption.monospaced())
                             Text(String(format: "Gyroscope  %.1f, %.1f, %.1f °/s", sample.gx, sample.gy, sample.gz)).font(.caption.monospaced())
                         }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 15))
                     }
                     Text("BLE packet setup").font(.headline)
-                    Text("The default decoder expects newline-delimited UTF-8 CSV: ax,ay,az,gx,gy,gz (g and degrees per second). Service and characteristic UUIDs are discovered automatically. Update BLEConfiguration and the packet decoder to match your ESP32 firmware.").font(.footnote).foregroundStyle(.secondary)
+                    Text("The default decoder expects newline-delimited UTF-8 CSV: ax,ay,az,gx,gy,gz. Acceleration is in m/s² and angular velocity is in degrees per second. Service and characteristic UUIDs are discovered automatically. Update BLEConfiguration and the packet decoder to match your ESP32 firmware.").font(.footnote).foregroundStyle(.secondary)
                 }.padding(20)
             }.background(Palette.paper).navigationTitle("Device")
                 .alert("Bluetooth issue", isPresented: Binding(get: { device.errorMessage != nil }, set: { if !$0 { device.errorMessage = nil } })) {

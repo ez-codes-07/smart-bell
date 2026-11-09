@@ -1,0 +1,3 @@
+interface:
+  display_name: "Smart Bell ESP32 BLE"
+  short_description: "Integrate ESP32 Bluetooth sensor data"
