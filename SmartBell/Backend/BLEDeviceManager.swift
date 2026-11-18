@@ -15,6 +15,8 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var estimatedPosition = PositionEstimate()
     @Published private(set) var verticalPosition = 0.0
     @Published private(set) var repCount = 0
+    /// True only during a workout session (between Start and Finish/Discard).
+    @Published private(set) var isCountingReps = false
     @Published private(set) var repTrackingProgress = RepTrackingProgress()
     @Published private(set) var usingDemo = false
     @Published private(set) var sampleCount = 0
@@ -99,15 +101,27 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         estimatedPosition = positionCalculator.position
         verticalPosition = positionCalculator.verticalPosition
         integratedGyroAngles = gyroIntegrator.angles
-        repTracker.rebaseForNextRep(position: estimatedPosition, verticalPosition: verticalPosition,
-                                    angles: integratedGyroAngles)
-        repTrackingProgress = repTracker.progress
+        if isCountingReps {
+            repTracker.rebaseForNextRep(position: estimatedPosition, verticalPosition: verticalPosition,
+                                        angles: integratedGyroAngles)
+            repTrackingProgress = repTracker.progress
+        }
     }
 
-    func resetRepCounting(for exercise: Exercise) {
+    /// Starts counting reps for a workout session. Reps are only counted between
+    /// this call and `stopRepCounting()`; outside a workout, motion is never counted.
+    func startRepCounting(for exercise: Exercise) {
         repTracker.reset(for: exercise)
         repCount = 0
         repTrackingProgress = repTracker.progress
+        isCountingReps = true
+    }
+
+    /// Ends the workout's rep counting (call after reading `repCount` to save it).
+    func stopRepCounting() {
+        isCountingReps = false
+        repCount = 0
+        repTrackingProgress = RepTrackingProgress()
     }
 
     private func resetIntegratedAngles() {
@@ -202,6 +216,23 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         integratedGyroAngles = gyroIntegrator.add(motion)
         estimatedPosition = positionCalculator.add(motion, isStill: still)
         verticalPosition = positionCalculator.verticalPosition
+        if isCountingReps {
+            updateRepCount(with: motion)
+        }
+        let now = Date()
+        sampleCount += 1
+        lastSampleDate = now
+        sampleArrivalTimes.append(now)
+        sampleArrivalTimes.removeAll { now.timeIntervalSince($0) > 2.0 }
+        if let first = sampleArrivalTimes.first, sampleArrivalTimes.count > 1 {
+            let elapsed = now.timeIntervalSince(first)
+            sampleRate = elapsed > 0 ? Double(sampleArrivalTimes.count - 1) / elapsed : 0
+        }
+        latestSample = sample
+    }
+
+    /// Runs the rep tracker on one processed sample. Only called during a workout.
+    private func updateRepCount(with motion: MotionSample) {
         let updatedRepCount = repTracker.update(sample: motion, position: estimatedPosition,
                                                 verticalPosition: verticalPosition, angles: integratedGyroAngles)
         if repTracker.isReadyForNextRep {
@@ -219,16 +250,6 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         }
         repCount = updatedRepCount
         repTrackingProgress = repTracker.progress
-        let now = Date()
-        sampleCount += 1
-        lastSampleDate = now
-        sampleArrivalTimes.append(now)
-        sampleArrivalTimes.removeAll { now.timeIntervalSince($0) > 2.0 }
-        if let first = sampleArrivalTimes.first, sampleArrivalTimes.count > 1 {
-            let elapsed = now.timeIntervalSince(first)
-            sampleRate = elapsed > 0 ? Double(sampleArrivalTimes.count - 1) / elapsed : 0
-        }
-        latestSample = sample
     }
 }
 

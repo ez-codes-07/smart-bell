@@ -118,7 +118,7 @@ struct WorkoutView: View {
                 HStack(spacing: 8) { Image(systemName: "info.circle"); Text("Connect your Smart Bell or use Demo mode on the Device tab.") }.font(.subheadline).foregroundStyle(.secondary)
             }
             Button {
-                device.resetRepCounting(for: exercise)
+                device.startRepCounting(for: exercise)
                 sessionStart = Date(); phase = .active
             } label: { Label("Start workout", systemImage: "play.fill").frame(maxWidth: .infinity).padding(17) }
                 .buttonStyle(.borderedProminent).tint(Palette.green).font(.headline).disabled(!device.isConnected || Double(weight) == nil)
@@ -138,8 +138,8 @@ struct WorkoutView: View {
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white, in: RoundedRectangle(cornerRadius: 15))
             dataCard
-            Button("Finish and save workout") { finishWorkout(); phase = .setup }.buttonStyle(.bordered).tint(.red)
-            Button("Discard workout") { sessionStart = nil; phase = .setup }.buttonStyle(.bordered)
+            Button("Finish and save workout") { finishWorkout(); device.stopRepCounting(); phase = .setup }.buttonStyle(.bordered).tint(.red)
+            Button("Discard workout") { sessionStart = nil; device.stopRepCounting(); phase = .setup }.buttonStyle(.bordered)
         }
     }
 
