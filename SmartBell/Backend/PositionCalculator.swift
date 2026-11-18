@@ -49,12 +49,12 @@ struct FrequencyDomainPositionConfiguration {
     /// about 10 s at 100 Hz, enough to hold several repetitions.
     var windowLength = 1024
     /// Band-pass edges in Hz. Content below `highPassStop` (gravity residue, bias,
-    /// and slow tilt drift) is removed; content above `lowPassStop` (sensor noise
-    /// and vibration) is removed. Raised-cosine ramps between start/stop limit ringing.
+    /// and slow tilt drift) is removed; content above `lowPassStop` (sensor noise,
+    /// vibration, and hand tremor at roughly 4–12 Hz) is removed. Raised-cosine ramps between start/stop limit ringing.
     var highPassStop = 0.10
     var highPassPass = 0.25
-    var lowPassPass = 5.0
-    var lowPassStop = 8.0
+    var lowPassPass = 1.5
+    var lowPassStop = 2.5
     /// The newest samples of a finite window are the least reliable after filtering,
     /// so position is read this many samples before the newest one (0.5 s at 100 Hz).
     /// Smaller values reduce latency but overstate fast movements.
@@ -252,13 +252,8 @@ private struct AccelerationHistory {
 final class FrequencyDomainDoubleIntegrator {
     private let configuration: FrequencyDomainPositionConfiguration
     private let windowLength: Int
-    private let transformLength: Int
-    private let log2Length: vDSP_Length
-    private let fftSetup: FFTSetupD
+    private let filter: MirroredFFTFilter
     private var signal: [Double]
-    private var extended: [Double]
-    private var real: [Double]
-    private var imaginary: [Double]
     private var bandPassGains: [Double] = []
     private var highPassGains: [Double] = []
     private var gainSampleRate = 0.0
@@ -266,20 +261,8 @@ final class FrequencyDomainDoubleIntegrator {
     init(configuration: FrequencyDomainPositionConfiguration) {
         self.configuration = configuration
         windowLength = configuration.windowLength
-        transformLength = windowLength * 2
-        log2Length = vDSP_Length(transformLength.trailingZeroBitCount)
-        guard let fftSetup = vDSP_create_fftsetupD(log2Length, FFTRadix(kFFTRadix2)) else {
-            fatalError("Unable to create FFT setup for length \(transformLength)")
-        }
-        self.fftSetup = fftSetup
+        filter = MirroredFFTFilter(windowLength: windowLength)
         signal = Array(repeating: 0, count: windowLength)
-        extended = Array(repeating: 0, count: transformLength)
-        real = Array(repeating: 0, count: windowLength)
-        imaginary = Array(repeating: 0, count: windowLength)
-    }
-
-    deinit {
-        vDSP_destroy_fftsetupD(fftSetup)
     }
 
     /// Returns the displacement (in the acceleration's length unit) at `readIndex`
@@ -291,9 +274,9 @@ final class FrequencyDomainDoubleIntegrator {
         let dt = 1 / sampleRate
 
         for (index, value) in acceleration.enumerated() { signal[index] = value }
-        filterSignal(with: bandPassGains)
+        filter.apply(bandPassGains, to: &signal)
         integrateSignal(dt: dt)            // velocity
-        if configuration.highPassVelocity { filterSignal(with: highPassGains) }
+        if configuration.highPassVelocity { filter.apply(highPassGains, to: &signal) }
         integrateSignal(dt: dt)            // position
         return signal[readIndex] - polynomialFit(order: configuration.positionDetrendOrder, at: readIndex)
     }
@@ -330,72 +313,17 @@ final class FrequencyDomainDoubleIntegrator {
         }
     }
 
-    /// Mirror `signal`, multiply its spectrum by `gains`, and write the first half
-    /// of the inverse transform back into `signal`.
-    private func filterSignal(with gains: [Double]) {
-        for index in 0..<windowLength {
-            extended[index] = signal[index]
-            extended[transformLength - 1 - index] = signal[index]
-        }
-
-        let halfLength = windowLength
-        real.withUnsafeMutableBufferPointer { realPointer in
-            imaginary.withUnsafeMutableBufferPointer { imaginaryPointer in
-                var split = DSPDoubleSplitComplex(realp: realPointer.baseAddress!,
-                                                  imagp: imaginaryPointer.baseAddress!)
-                extended.withUnsafeBufferPointer { extendedPointer in
-                    extendedPointer.baseAddress!.withMemoryRebound(to: DSPDoubleComplex.self,
-                                                                    capacity: halfLength) {
-                        vDSP_ctozD($0, 2, &split, 1, vDSP_Length(halfLength))
-                    }
-                }
-
-                vDSP_fft_zripD(fftSetup, &split, 1, log2Length, FFTDirection(kFFTDirection_Forward))
-
-                // Packed real-FFT layout: realp[0] = DC, imagp[0] = Nyquist,
-                // then bins 1..<N/2 as complex pairs.
-                realPointer[0] *= gains[0]
-                imaginaryPointer[0] *= gains[halfLength]
-                for bin in 1..<halfLength {
-                    realPointer[bin] *= gains[bin]
-                    imaginaryPointer[bin] *= gains[bin]
-                }
-
-                vDSP_fft_zripD(fftSetup, &split, 1, log2Length, FFTDirection(kFFTDirection_Inverse))
-
-                extended.withUnsafeMutableBufferPointer { extendedPointer in
-                    extendedPointer.baseAddress!.withMemoryRebound(to: DSPDoubleComplex.self,
-                                                                    capacity: halfLength) {
-                        vDSP_ztocD(&split, 1, $0, 2, vDSP_Length(halfLength))
-                    }
-                }
-            }
-        }
-
-        // vDSP's packed real forward+inverse round trip scales by 2 × transform length.
-        let scale = 1 / Double(2 * transformLength)
-        for index in 0..<windowLength { signal[index] = extended[index] * scale }
-    }
-
     /// Per-bin gains, from DC (index 0) to Nyquist (index windowLength).
     /// DC is always zero, which removes constant offsets and integration constants.
     private func updateGainsIfNeeded(sampleRate: Double) {
         guard bandPassGains.isEmpty || abs(sampleRate - gainSampleRate) > gainSampleRate * 0.01 else { return }
         gainSampleRate = sampleRate
-        let binWidth = sampleRate / Double(transformLength)
-        let frequencies = (0...windowLength).map { Double($0) * binWidth }
+        let frequencies = filter.binFrequencies(sampleRate: sampleRate)
         highPassGains = frequencies.map {
-            Self.raisedCosineStep($0, from: configuration.highPassStop, to: configuration.highPassPass)
+            MirroredFFTFilter.raisedCosineStep($0, from: configuration.highPassStop, to: configuration.highPassPass)
         }
         bandPassGains = zip(frequencies, highPassGains).map { frequency, highPass in
-            highPass * (1 - Self.raisedCosineStep(frequency, from: configuration.lowPassPass, to: configuration.lowPassStop))
+            highPass * (1 - MirroredFFTFilter.raisedCosineStep(frequency, from: configuration.lowPassPass, to: configuration.lowPassStop))
         }
-    }
-
-    /// 0 at or below `start`, 1 at or above `end`, with a smooth half-cosine between.
-    private static func raisedCosineStep(_ value: Double, from start: Double, to end: Double) -> Double {
-        if value <= start { return 0 }
-        if value >= end { return 1 }
-        return 0.5 - 0.5 * cos(Double.pi * (value - start) / (end - start))
     }
 }

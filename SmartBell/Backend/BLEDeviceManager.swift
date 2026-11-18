@@ -32,6 +32,14 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private var previousDecodedTimestamp: TimeInterval?
     private var gyroIntegrator = GyroscopeIntegrator()
     private var positionCalculator = PositionCalculator()
+    /// FFT low-pass (~2 Hz) applied before angle integration and rep counting. It
+    /// removes sensor noise and hand tremor; its lag matches the position estimator's
+    /// so the rep tracker sees filtered samples and position for the same instant.
+    private var motionFilter = MotionSampleLowPassFilter(configuration: {
+        var configuration = MotionLowPassConfiguration()
+        configuration.outputLagSamples = FrequencyDomainPositionConfiguration().outputLagSamples
+        return configuration
+    }())
     private var repTracker = ExerciseRepTracker()
 
     override init() {
@@ -89,6 +97,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     }
 
     private func resetIntegratedAngles() {
+        motionFilter.reset()
         gyroIntegrator.reset()
         integratedGyroAngles = gyroIntegrator.angles
         positionCalculator.reset()
@@ -147,14 +156,19 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     }
 
     private func publish(_ sample: MotionSample) {
-        integratedGyroAngles = gyroIntegrator.add(sample)
+        // Raw samples feed the diagnostics display and the position estimator (which
+        // band-pass filters internally). Angles and rep counting use the FFT
+        // low-passed stream, delayed by the same 0.5 s as position.
+        let filteredSample = motionFilter.add(sample)
+        integratedGyroAngles = gyroIntegrator.add(filteredSample)
         estimatedPosition = positionCalculator.add(sample)
         verticalPosition = positionCalculator.verticalPosition
-        let updatedRepCount = repTracker.update(sample: sample, position: estimatedPosition,
+        let updatedRepCount = repTracker.update(sample: filteredSample, position: estimatedPosition,
                                                 verticalPosition: verticalPosition, angles: integratedGyroAngles)
-        if updatedRepCount > repCount {
-            // The detector has reached the eccentric return. Re-zero the local
-            // position and displayed angle baselines before the next repetition.
+        if repTracker.isReadyForNextRep {
+            // The counted rep's lowering has finished. Re-zero the local position
+            // and displayed angle baselines before the next repetition. (Doing this
+            // at the moment of counting, part-way down, caused double counts.)
             positionCalculator.rebasePosition()
             gyroIntegrator.reset()
             estimatedPosition = positionCalculator.position
