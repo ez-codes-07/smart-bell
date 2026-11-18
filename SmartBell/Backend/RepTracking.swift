@@ -30,32 +30,60 @@ struct ShoulderPressRepTrackingConfiguration {
 /// before the next cycle takes its baseline. Without this, rebasing part-way down
 /// makes the rest of the lowering look like the start of another rep.
 struct RepReturnSettler {
-    /// Settled once the excursion has stopped shrinking for this long (seconds)...
+    /// Settled once progress back down has stopped falling for this long (seconds)...
     var holdDuration = 0.6
-    /// ...or has risen this far (degrees) above its lowest point, i.e. the next rep began.
+    /// ...or has risen above its lowest point by the larger of this many degrees and
+    /// this fraction of the rep's peak, i.e. the next rep began. Settling late is
+    /// harmless because the next rep is rebased at the recorded bottom.
     var restartHysteresis = 3.0
+    var restartFractionOfPeak = 0.10
     private(set) var isSettling = false
-    private var minimumExcursion = 0.0
-    private var timeSinceMinimum = 0.0
+    private var activeHysteresis = 3.0
+    private var baseline = IntegratedGyroAngles()
+    private var direction = (x: 0.0, y: 0.0, z: 0.0)
+    private var minimumProgress = 0.0
+    /// Seconds since progress was lowest, i.e. since the bottom of the rep. When
+    /// `update` reports settled, this is how long ago the dumbbell was momentarily
+    /// at rest, which the position estimator uses as a zero-velocity point.
+    private(set) var timeSinceMinimum = 0.0
+    /// Integrated angles at the bottom of the rep; the next rep's baseline.
+    private(set) var anglesAtMinimum = IntegratedGyroAngles()
 
-    mutating func begin(at excursion: Double) {
+    /// Starts watching the lowering. Progress is the signed angle travelled along
+    /// the rep's own direction (start → peak), so the bottom is where the arm stops
+    /// even if the integrated angle overshoots the start point.
+    mutating func begin(baseline: IntegratedGyroAngles, peakAngles: IntegratedGyroAngles,
+                        angles: IntegratedGyroAngles, peak: Double) {
+        let dx = peakAngles.x - baseline.x, dy = peakAngles.y - baseline.y, dz = peakAngles.z - baseline.z
+        let length = (dx * dx + dy * dy + dz * dz).squareRoot()
+        guard length > 1e-6 else { return }
+        self.baseline = baseline
+        direction = (dx / length, dy / length, dz / length)
         isSettling = true
-        minimumExcursion = excursion
+        activeHysteresis = max(restartHysteresis, restartFractionOfPeak * peak)
+        minimumProgress = progress(angles)
+        anglesAtMinimum = angles
         timeSinceMinimum = 0
     }
 
     /// Returns true when the return has finished; the caller should then rebase.
-    mutating func update(excursion: Double, deltaTime: Double) -> Bool {
+    mutating func update(angles: IntegratedGyroAngles, deltaTime: Double) -> Bool {
         guard isSettling else { return false }
-        if excursion < minimumExcursion {
-            minimumExcursion = excursion
+        let current = progress(angles)
+        if current < minimumProgress {
+            minimumProgress = current
+            anglesAtMinimum = angles
             timeSinceMinimum = 0
             return false
         }
         timeSinceMinimum += deltaTime
-        guard timeSinceMinimum >= holdDuration || excursion > minimumExcursion + restartHysteresis else { return false }
+        guard timeSinceMinimum >= holdDuration || current > minimumProgress + activeHysteresis else { return false }
         isSettling = false
         return true
+    }
+
+    private func progress(_ angles: IntegratedGyroAngles) -> Double {
+        (angles.x - baseline.x) * direction.x + (angles.y - baseline.y) * direction.y + (angles.z - baseline.z) * direction.z
     }
 
     mutating func cancel() {
@@ -76,10 +104,15 @@ struct BicepCurlRepTracker {
     private var isMoving = false
     private var elapsed = 0.0
     private var peakAngle = 0.0
+    private var peakAngles = IntegratedGyroAngles()
     private var settler = RepReturnSettler()
     /// True for the update in which the previous rep's return finished; the caller
     /// should re-zero its displayed baselines and call `rebaseForNextRep`.
     private(set) var didSettle = false
+    /// When `didSettle`, seconds since the bottom of the finished rep.
+    private(set) var secondsSinceRepBottom = 0.0
+    /// When `didSettle`, integrated angles at the bottom of the finished rep.
+    private(set) var anglesAtRepBottom = IntegratedGyroAngles()
 
     mutating func reset() {
         baselineAngles = nil
@@ -104,9 +137,11 @@ struct BicepCurlRepTracker {
 
         let angleExcursion = RepTrackingSignal.angleDistance(angles, from: baselineAngles)
         if settler.isSettling {
-            if settler.update(excursion: angleExcursion, deltaTime: sample.deltaTime) {
+            if settler.update(angles: angles, deltaTime: sample.deltaTime) {
                 rebase(angles: angles)
                 didSettle = true
+                secondsSinceRepBottom = settler.timeSinceMinimum
+                anglesAtRepBottom = settler.anglesAtMinimum
             } else {
                 updateProgress(phase: "Finishing rep", angleExcursion: angleExcursion)
             }
@@ -120,12 +155,16 @@ struct BicepCurlRepTracker {
             isMoving = true
             elapsed = sample.deltaTime
             peakAngle = angleExcursion
+            peakAngles = angles
             updateProgress(phase: "Curling", angleExcursion: angleExcursion)
             return false
         }
 
         elapsed += sample.deltaTime
-        peakAngle = max(peakAngle, angleExcursion)
+        if angleExcursion > peakAngle {
+            peakAngle = angleExcursion
+            peakAngles = angles
+        }
 
         if elapsed > configuration.maximumDuration {
             rebase(angles: angles)
@@ -141,8 +180,9 @@ struct BicepCurlRepTracker {
 
         if reachedAngleThreshold && elapsed >= configuration.minimumDuration && returnedToAngleBaseline {
             // Count now, but keep the baseline until the lowering has finished.
+            let peak = peakAngle
             clearCycle()
-            settler.begin(at: angleExcursion)
+            settler.begin(baseline: baselineAngles, peakAngles: peakAngles, angles: angles, peak: peak)
             updateProgress(phase: "Finishing rep", angleExcursion: angleExcursion)
             return true
         }
@@ -192,10 +232,15 @@ struct ShoulderPressRepTracker {
     private var elapsed = 0.0
     private var peakPosition = 0.0
     private var peakAngle = 0.0
+    private var peakAngles = IntegratedGyroAngles()
     private var settler = RepReturnSettler()
     /// True for the update in which the previous rep's return finished; the caller
     /// should re-zero its displayed baselines and call `rebaseForNextRep`.
     private(set) var didSettle = false
+    /// When `didSettle`, seconds since the bottom of the finished rep.
+    private(set) var secondsSinceRepBottom = 0.0
+    /// When `didSettle`, integrated angles at the bottom of the finished rep.
+    private(set) var anglesAtRepBottom = IntegratedGyroAngles()
 
     mutating func reset() {
         settler.cancel()
@@ -230,13 +275,18 @@ struct ShoulderPressRepTracker {
             return false
         }
 
-        let positionExcursion = RepTrackingSignal.positionDistance(position, from: baselinePosition)
+        // A press is vertical, and vertical (world Z) is the most reliable position
+        // axis: small tilt errors leak gravity mostly sideways, and heading is
+        // unobservable without a magnetometer. So use vertical travel only.
+        let positionExcursion = abs(position.z - baselinePosition.z)
         let angleExcursion = RepTrackingSignal.angleDistance(angles, from: baselineAngles)
         if settler.isSettling {
             // Angle is the steadier signal for detecting the end of the lowering.
-            if settler.update(excursion: angleExcursion, deltaTime: sample.deltaTime) {
+            if settler.update(angles: angles, deltaTime: sample.deltaTime) {
                 rebase(position: position, angles: angles)
                 didSettle = true
+                secondsSinceRepBottom = settler.timeSinceMinimum
+                anglesAtRepBottom = settler.anglesAtMinimum
             } else {
                 updateProgress(phase: "Finishing rep", positionExcursion: positionExcursion, angleExcursion: angleExcursion)
             }
@@ -258,13 +308,17 @@ struct ShoulderPressRepTracker {
             elapsed = sample.deltaTime
             peakPosition = positionExcursion
             peakAngle = angleExcursion
+            peakAngles = angles
             updateProgress(phase: "Pressing up", positionExcursion: positionExcursion, angleExcursion: angleExcursion)
             return false
         }
 
         elapsed += sample.deltaTime
         peakPosition = max(peakPosition, positionExcursion)
-        peakAngle = max(peakAngle, angleExcursion)
+        if angleExcursion > peakAngle {
+            peakAngle = angleExcursion
+            peakAngles = angles
+        }
 
         if elapsed > configuration.maximumDuration {
             rebase(position: position, angles: angles)
@@ -293,11 +347,12 @@ struct ShoulderPressRepTracker {
 
         if returnedFromPress && elapsed >= configuration.minimumDuration {
             // Count now, but keep the baseline until the lowering has finished.
+            let peak = peakAngle
             phase = .waiting
             elapsed = 0
             peakPosition = 0
             peakAngle = 0
-            settler.begin(at: angleExcursion)
+            settler.begin(baseline: baselineAngles, peakAngles: peakAngles, angles: angles, peak: peak)
             updateProgress(phase: "Finishing rep", positionExcursion: positionExcursion, angleExcursion: angleExcursion)
             return true
         }
@@ -355,6 +410,23 @@ struct ExerciseRepTracker {
         switch algorithm {
         case .bicepCurl(let tracker): return tracker.didSettle
         case .shoulderPress(let tracker): return tracker.didSettle
+        }
+    }
+
+    /// When `isReadyForNextRep`, seconds since the bottom of the finished rep, where
+    /// the dumbbell was momentarily at rest.
+    var secondsSinceRepBottom: Double {
+        switch algorithm {
+        case .bicepCurl(let tracker): return tracker.secondsSinceRepBottom
+        case .shoulderPress(let tracker): return tracker.secondsSinceRepBottom
+        }
+    }
+
+    /// When `isReadyForNextRep`, integrated angles at the bottom of the finished rep.
+    var anglesAtRepBottom: IntegratedGyroAngles {
+        switch algorithm {
+        case .bicepCurl(let tracker): return tracker.anglesAtRepBottom
+        case .shoulderPress(let tracker): return tracker.anglesAtRepBottom
         }
     }
 

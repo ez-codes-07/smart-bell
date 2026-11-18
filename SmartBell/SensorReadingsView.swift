@@ -7,6 +7,7 @@ struct SensorReadingsView: View {
     @State private var clock = Date()
 
     private var latest: MotionSample? { device.latestSample }
+    private var filtered: MotionSample? { device.filteredSample }
     private var sampleAge: TimeInterval? { device.lastSampleDate.map { clock.timeIntervalSince($0) } }
     private var streamIsFresh: Bool { (sampleAge ?? .infinity) < 1.5 }
 
@@ -92,11 +93,15 @@ struct SensorReadingsView: View {
             }
             HStack(spacing: 12) {
                 DiagnosticCard(title: "LAST SAMPLE", value: ageLabel, icon: "clock")
-                DiagnosticCard(title: "ACCEL MAG", value: latest.map { String(format: "%.2f m/s²", $0.accelerationMagnitude) } ?? "—", icon: "move.3d")
+                DiagnosticCard(title: "ACCEL MAG", value: filtered.map { String(format: "%.2f m/s²", $0.accelerationMagnitude) } ?? "—", icon: "move.3d")
             }
             HStack(spacing: 12) {
                 DiagnosticCard(title: "SENSOR ΔT", value: deltaTimeLabel, icon: "timer")
-                DiagnosticCard(title: "GYRO MAG", value: latest.map { String(format: "%.1f °/s", $0.gyroMagnitude) } ?? "—", icon: "gyroscope")
+                DiagnosticCard(title: "GYRO MAG", value: filtered.map { String(format: "%.1f °/s", $0.gyroMagnitude) } ?? "—", icon: "gyroscope")
+            }
+            HStack(spacing: 12) {
+                DiagnosticCard(title: "MOTION", value: latest == nil ? "—" : (device.isStill ? "Still" : "Moving"),
+                               icon: device.isStill ? "pause.circle" : "figure.strengthtraining.traditional")
             }
         }
     }
@@ -111,17 +116,20 @@ struct SensorReadingsView: View {
     }
 
     private func latestSampleCard(_ sample: MotionSample) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("LATEST SAMPLE").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+        let shown = filtered ?? sample
+        return VStack(alignment: .leading, spacing: 15) {
+            Text("LATEST SAMPLE · FILTERED").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+            Text("FFT low-passed at ~2 Hz with gyro bias removed, about 0.25 s behind live. Rotation reads zero while still. Raw values are in Recent Samples.")
+                .font(.caption).foregroundStyle(.secondary)
             Text("Accelerometer · m/s²").font(.subheadline.weight(.semibold))
-            AxisReading(label: "X", value: sample.ax, unit: "m/s²", scale: 20)
-            AxisReading(label: "Y", value: sample.ay, unit: "m/s²", scale: 20)
-            AxisReading(label: "Z", value: sample.az, unit: "m/s²", scale: 20)
+            AxisReading(label: "X", value: shown.ax, unit: "m/s²", scale: 20)
+            AxisReading(label: "Y", value: shown.ay, unit: "m/s²", scale: 20)
+            AxisReading(label: "Z", value: shown.az, unit: "m/s²", scale: 20)
             Divider().padding(.vertical, 2)
             Text("Gyroscope · °/s").font(.subheadline.weight(.semibold))
-            AxisReading(label: "X", value: sample.gx, unit: "°/s", scale: 250)
-            AxisReading(label: "Y", value: sample.gy, unit: "°/s", scale: 250)
-            AxisReading(label: "Z", value: sample.gz, unit: "°/s", scale: 250)
+            AxisReading(label: "X", value: shown.gx, unit: "°/s", scale: 250)
+            AxisReading(label: "Y", value: shown.gy, unit: "°/s", scale: 250)
+            AxisReading(label: "Z", value: shown.gz, unit: "°/s", scale: 250)
             gyroAnglesSection
             positionSection(sample)
         }
@@ -136,7 +144,7 @@ struct SensorReadingsView: View {
             AxisAngleReading(label: "X", value: device.integratedGyroAngles.x)
             AxisAngleReading(label: "Y", value: device.integratedGyroAngles.y)
             AxisAngleReading(label: "Z", value: device.integratedGyroAngles.z)
-            Text("Calculated by integrating gyro rate over each sample interval. Small gyro bias accumulates as drift, so these are not reliable absolute orientation angles.")
+            Text("Integrated from the filtered, bias-corrected gyro rate and held while still. Re-zeroed at the bottom of each counted rep. Relative angles, not absolute orientation.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -151,7 +159,7 @@ struct SensorReadingsView: View {
             PositionAxisReading(label: "Z", value: device.estimatedPosition.z)
             PositionAxisReading(label: "Vertical", value: device.verticalPosition)
             InteractivePositionPlot(points: positionTrail)
-            Text("Experimental double integration with stationary gravity correction and zero-velocity updates. Slow movement may be treated as still, and position estimates can still drift.")
+            Text("Experimental: filtered acceleration is double-integrated while moving. When the sensor is still (or at the bottom of a rep), velocity is reset and accumulated drift removed, so position holds. Vertical is the most reliable axis; X/Y can drift during long continuous movement.")
                 .font(.caption).foregroundStyle(.secondary)
             Text(String(format: "Sample interval Δt · %.6f s", sample.deltaTime))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)

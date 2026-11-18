@@ -8,6 +8,9 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var devices: [CBPeripheral] = []
     @Published private(set) var isConnected = false
     @Published private(set) var latestSample: MotionSample?
+    /// Low-passed, gyro-bias-corrected sample (0.25 s behind `latestSample`).
+    @Published private(set) var filteredSample: MotionSample?
+    @Published private(set) var isStill = true
     @Published private(set) var integratedGyroAngles = IntegratedGyroAngles()
     @Published private(set) var estimatedPosition = PositionEstimate()
     @Published private(set) var verticalPosition = 0.0
@@ -32,14 +35,12 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private var previousDecodedTimestamp: TimeInterval?
     private var gyroIntegrator = GyroscopeIntegrator()
     private var positionCalculator = PositionCalculator()
-    /// FFT low-pass (~2 Hz) applied before angle integration and rep counting. It
-    /// removes sensor noise and hand tremor; its lag matches the position estimator's
-    /// so the rep tracker sees filtered samples and position for the same instant.
-    private var motionFilter = MotionSampleLowPassFilter(configuration: {
-        var configuration = MotionLowPassConfiguration()
-        configuration.outputLagSamples = FrequencyDomainPositionConfiguration().outputLagSamples
-        return configuration
-    }())
+    /// FFT low-pass (~2 Hz) applied before angles, position, and rep counting. It
+    /// removes sensor noise and hand tremor, at a 0.25 s processing delay.
+    private var motionFilter = MotionSampleLowPassFilter()
+    /// Learns gyro bias and noise at start-up, then flags stillness from the
+    /// filtered stream so position and angles hold when the dumbbell is at rest.
+    private var stillnessDetector = StillnessDetector()
     private var repTracker = ExerciseRepTracker()
 
     override init() {
@@ -98,6 +99,9 @@ final class BLEDeviceManager: NSObject, ObservableObject {
 
     private func resetIntegratedAngles() {
         motionFilter.reset()
+        stillnessDetector.reset()
+        filteredSample = nil
+        isStill = true
         gyroIntegrator.reset()
         integratedGyroAngles = gyroIntegrator.angles
         positionCalculator.reset()
@@ -108,13 +112,28 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private func emitDemoSample() {
         let now = Date.timeIntervalSinceReferenceDate
         let t = now - demoClock
-        // Smooth, exercise-like cycles with gravity direction changing over each repetition.
-        demoPhase += 0.01 * 2 * .pi / 2.4
-        let phase = demoPhase.truncatingRemainder(dividingBy: 2 * .pi)
-        let envelope = max(0, sin(phase))
-        let sample = MotionSample(timestamp: t, deltaTime: 0.01, ax: 0.18 * sin(phase) * standardGravity, ay: 0.10 * cos(phase) * standardGravity, az: (1.0 - 0.50 * envelope) * standardGravity,
-                                  gx: 0, gy: 115 * cos(phase), gz: 5 * sin(phase))
-        publish(sample)
+        // Physically consistent demo: after 1.5 s still (so gyro bias and noise can be
+        // learned, like a real start-up), repeat a 2.0 s rep that lifts 0.35 m while
+        // rotating 40° about the sensor Y axis, then pause 0.6 s. Accelerometer and
+        // gyro values are derived from that motion so integration stays meaningful.
+        let repDuration = 2.0, pauseDuration = 0.6, lift = 0.35, swingDegrees = 40.0
+        var theta = 0.0, rate = 0.0, verticalAcceleration = 0.0
+        if t >= 1.5 {
+            demoPhase += 0.01
+            let cycleTime = demoPhase.truncatingRemainder(dividingBy: repDuration + pauseDuration)
+            if cycleTime < repDuration {
+                let w = 2 * Double.pi / repDuration
+                theta = swingDegrees * 0.5 * (1 - cos(w * cycleTime))
+                rate = swingDegrees * 0.5 * w * sin(w * cycleTime)
+                verticalAcceleration = lift * 0.5 * w * w * cos(w * cycleTime)
+            }
+        }
+        let thetaRadians = theta * .pi / 180
+        let specificForce = standardGravity + verticalAcceleration
+        publish(MotionSample(timestamp: t, deltaTime: 0.01,
+                             ax: -specificForce * sin(thetaRadians), ay: 0,
+                             az: specificForce * cos(thetaRadians),
+                             gx: 0, gy: rate, gz: 0))
     }
 
     private func parse(_ data: Data) {
@@ -156,26 +175,36 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     }
 
     private func publish(_ sample: MotionSample) {
-        // Raw samples feed the diagnostics display and the position estimator (which
-        // band-pass filters internally). Angles and rep counting use the FFT
-        // low-passed stream, delayed by the same 0.5 s as position.
-        let filteredSample = motionFilter.add(sample)
-        integratedGyroAngles = gyroIntegrator.add(filteredSample)
-        estimatedPosition = positionCalculator.add(sample)
+        // Raw samples feed the diagnostics list. Angles,
+        // position, and rep counting use the FFT low-passed, bias-corrected stream.
+        let filtered = motionFilter.add(sample)
+        let (corrected, still) = stillnessDetector.process(filtered, filterIsWarmedUp: motionFilter.isWarmedUp)
+        // At rest, treat rotation as exactly zero so angles do not creep from noise.
+        let motion = still
+            ? MotionSample(timestamp: corrected.timestamp, deltaTime: corrected.deltaTime,
+                           ax: corrected.ax, ay: corrected.ay, az: corrected.az, gx: 0, gy: 0, gz: 0)
+            : corrected
+        filteredSample = motion
+        isStill = still
+        integratedGyroAngles = gyroIntegrator.add(motion)
+        estimatedPosition = positionCalculator.add(motion, isStill: still)
         verticalPosition = positionCalculator.verticalPosition
-        let updatedRepCount = repTracker.update(sample: filteredSample, position: estimatedPosition,
+        let updatedRepCount = repTracker.update(sample: motion, position: estimatedPosition,
                                                 verticalPosition: verticalPosition, angles: integratedGyroAngles)
         if repTracker.isReadyForNextRep {
             // The counted rep's lowering has finished. Re-zero the local position
             // and displayed angle baselines before the next repetition. (Doing this
             // at the moment of counting, part-way down, caused double counts.)
-            positionCalculator.rebasePosition()
-            gyroIntegrator.reset()
+            // The rep's bottom was a moment of zero velocity: re-zero position and
+            // angles there, and use it to remove drift even when the user never
+            // pauses long enough to be detected as still.
+            positionCalculator.rebase(atRestPointSecondsAgo: repTracker.secondsSinceRepBottom)
+            gyroIntegrator.shiftOrigin(to: repTracker.anglesAtRepBottom)
             estimatedPosition = positionCalculator.position
             verticalPosition = positionCalculator.verticalPosition
             integratedGyroAngles = gyroIntegrator.angles
-            repTracker.rebaseForNextRep(position: estimatedPosition, verticalPosition: verticalPosition,
-                                        angles: integratedGyroAngles)
+            repTracker.rebaseForNextRep(position: PositionEstimate(), verticalPosition: 0,
+                                        angles: IntegratedGyroAngles())
         }
         repCount = updatedRepCount
         repTrackingProgress = repTracker.progress

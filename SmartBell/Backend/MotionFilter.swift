@@ -1,5 +1,6 @@
 import Accelerate
 import Foundation
+import simd
 
 /// Zero-phase FFT filtering of a fixed-length window. The window is mirrored
 /// (even extension) before the transform so the periodic signal the FFT assumes
@@ -106,9 +107,10 @@ struct MotionLowPassConfiguration {
     var passFrequency = 1.5
     var stopFrequency = 2.5
     /// Samples are emitted this many samples behind the newest one, where the
-    /// finite-window edge effects have settled (0.5 s at 100 Hz). Keep equal to the
-    /// position estimator's lag so filtered samples and position stay aligned.
-    var outputLagSamples = 50
+    /// finite-window edge effects have mostly settled (0.25 s at 100 Hz). This is the
+    /// app's processing delay. In synthetic tests the error was ~2–3% of peak at 25
+    /// samples, about the same as at 50; at 10–15 samples it rose to 8–16%.
+    var outputLagSamples = 25
     /// Extra samples, beyond the lag, during which a "still" sample is emitted at
     /// start-up. The edge between the pre-filled history and the first real samples
     /// rings briefly; with strong tremor that ringing integrates into a false angle.
@@ -189,6 +191,11 @@ struct MotionSampleLowPassFilter {
                             gx: filtered[3], gy: filtered[4], gz: filtered[5])
     }
 
+    /// False while start-up "still" placeholders are being emitted.
+    var isWarmedUp: Bool {
+        receivedSamples > configuration.outputLagSamples + configuration.warmUpSamples
+    }
+
     mutating func reset() {
         self = MotionSampleLowPassFilter(configuration: configuration)
     }
@@ -199,5 +206,104 @@ struct MotionSampleLowPassFilter {
         gains = filter.binFrequencies(sampleRate: sampleRate).map {
             1 - MirroredFFTFilter.raisedCosineStep($0, from: configuration.passFrequency, to: configuration.stopFrequency)
         }
+    }
+}
+
+/// Tuning for stillness detection. Limits are learned from the sensor's own
+/// filtered signal at start-up rather than fixed; the ranges only bound that learning.
+struct StillnessConfiguration {
+    /// Filtered samples, after the low-pass warm-up, used to learn gyro bias, gravity,
+    /// and the at-rest signal level. With the warm-up, hold the sensor still for about
+    /// the first 1.5 s.
+    var learningSamples = 75
+    /// Stillness requires every filtered sample in this window to be within limits
+    /// (0.3 s at 100 Hz). A single quiet instant mid-rep is not enough.
+    var windowSamples = 30
+    /// Limit = this multiple of the largest at-rest deviation seen while learning.
+    /// Tremor left over after filtering is part of that level, so it does not block
+    /// stillness detection.
+    var restLevelMultiplier = 3.0
+    var gyroLimitRange = 0.3...10.0          // °/s
+    var accelerationLimitRange = 0.02...0.5  // m/s² deviation of |a| from gravity
+    /// Fraction per still sample by which gyro bias and gravity follow measurements.
+    var stillAdaptationRate = 0.01
+    /// Largest per-axis gyro bias (°/s) accepted from start-up learning.
+    var maximumInitialGyroBias = 5.0
+}
+
+/// Decides whether the sensor is still from the FFT low-passed stream, and learns
+/// gyro bias. Bias is first estimated at start-up, then refined whenever the sensor
+/// is still, so integrated angles stop creeping at rest.
+struct StillnessDetector {
+    let configuration: StillnessConfiguration
+    private(set) var gyroBias = SIMD3<Double>(repeating: 0)
+    private(set) var gyroLimit = 1.0
+    private(set) var accelerationLimit = 0.1
+    private(set) var isLearned = false
+    private var gravityMagnitude = 9.80665
+    private var learningGyro: [SIMD3<Double>] = []
+    private var learningAccelerationMagnitude: [Double] = []
+    private var quietRun = 0
+
+    init(configuration: StillnessConfiguration = StillnessConfiguration()) {
+        self.configuration = configuration
+    }
+
+    /// Takes a low-passed sample; returns it with gyro bias removed and whether the
+    /// sensor is still. Until start-up learning finishes, reports a still sensor with
+    /// zero rotation.
+    mutating func process(_ filtered: MotionSample, filterIsWarmedUp: Bool) -> (sample: MotionSample, isStill: Bool) {
+        let measuredGyro = SIMD3(filtered.gx, filtered.gy, filtered.gz)
+        guard isLearned else {
+            if filterIsWarmedUp { learn(gyro: measuredGyro, accelerationMagnitude: filtered.accelerationMagnitude) }
+            return (MotionSample(timestamp: filtered.timestamp, deltaTime: filtered.deltaTime,
+                                 ax: filtered.ax, ay: filtered.ay, az: filtered.az, gx: 0, gy: 0, gz: 0), true)
+        }
+        let corrected = measuredGyro - gyroBias
+        let accelerationDeviation = abs(filtered.accelerationMagnitude - gravityMagnitude)
+        let quiet = simd_length(corrected) <= gyroLimit && accelerationDeviation <= accelerationLimit
+        quietRun = quiet ? quietRun + 1 : 0
+        let isStill = quietRun >= configuration.windowSamples
+
+        if isStill {
+            let rate = configuration.stillAdaptationRate
+            gyroBias += (measuredGyro - gyroBias) * rate
+            gravityMagnitude += (filtered.accelerationMagnitude - gravityMagnitude) * rate
+        }
+        return (MotionSample(timestamp: filtered.timestamp, deltaTime: filtered.deltaTime,
+                             ax: filtered.ax, ay: filtered.ay, az: filtered.az,
+                             gx: corrected.x, gy: corrected.y, gz: corrected.z), isStill)
+    }
+
+    mutating func reset() {
+        self = StillnessDetector(configuration: configuration)
+    }
+
+    private mutating func learn(gyro: SIMD3<Double>, accelerationMagnitude: Double) {
+        learningGyro.append(gyro)
+        learningAccelerationMagnitude.append(accelerationMagnitude)
+        guard learningGyro.count >= configuration.learningSamples else { return }
+
+        let count = Double(learningGyro.count)
+        // Clamp to a plausible MEMS gyro bias so movement during start-up is not
+        // mistaken for a large bias (still-time refinement corrects it later).
+        let meanGyro = learningGyro.reduce(SIMD3<Double>(repeating: 0), +) / count
+        let biasLimit = configuration.maximumInitialGyroBias
+        gyroBias = simd_clamp(meanGyro, SIMD3(repeating: -biasLimit), SIMD3(repeating: biasLimit))
+        gravityMagnitude = learningAccelerationMagnitude.reduce(0, +) / count
+
+        // Largest at-rest deviation: filtered noise plus any leftover tremor.
+        let gyroRestLevel = learningGyro.map { simd_length($0 - gyroBias) }.max() ?? 0
+        let accelerationRestLevel = learningAccelerationMagnitude.map { abs($0 - gravityMagnitude) }.max() ?? 0
+        gyroLimit = Self.clamp(configuration.restLevelMultiplier * gyroRestLevel, to: configuration.gyroLimitRange)
+        accelerationLimit = Self.clamp(configuration.restLevelMultiplier * accelerationRestLevel,
+                                       to: configuration.accelerationLimitRange)
+        isLearned = true
+        learningGyro = []
+        learningAccelerationMagnitude = []
+    }
+
+    private static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        min(max(value, range.lowerBound), range.upperBound)
     }
 }
