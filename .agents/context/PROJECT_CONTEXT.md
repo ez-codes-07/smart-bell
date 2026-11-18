@@ -16,6 +16,7 @@ Smart Bell is a native iOS app for dumbbell workout tracking. An inertial sensor
 - `SmartBell/Backend/Models.swift`: motion samples (including sensor delta time), exercise, and workout data types plus BLE configuration.
 - `SmartBell/Backend/WorkoutStore.swift`: local workout persistence via UserDefaults.
 - `SmartBell.xcodeproj`: iOS app project. The target uses automatic code signing; each developer selects their own Team in Xcode for device deployment.
+- `tools/replay/main.swift`: command-line replay of a raw CSV recorded on Sensor Readings (Record → Share CSV) through the app's exact filter/stillness/position pipeline; prints raw-stream checks (rate, units, ±2 g clipping), positions, stillness, tilt check, and position jumps. Not part of the app target; build instructions are in the file header.
 - `hardware/smartbell-esp32.ino`: Arduino ESP32 firmware sketch using the DFRobot BMX160 library over I²C.
 
 ## Current BLE assumptions

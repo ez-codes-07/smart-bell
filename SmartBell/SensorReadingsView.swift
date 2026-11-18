@@ -57,6 +57,7 @@ struct SensorReadingsView: View {
             titleSection
             connectionSection
             summarySection
+            recordingSection
             latestSection
             recentSamplesSection
             Text("Axis and rate values are raw diagnostics. Check firmware units and packet mapping before interpreting them.")
@@ -83,6 +84,34 @@ struct SensorReadingsView: View {
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var recordingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("RECORD RAW DATA").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+            Text("Records the sensor stream exactly as received so it can be replayed offline to diagnose position problems.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                if device.isRecording {
+                    Button { device.stopRecording() } label: {
+                        Label("Stop", systemImage: "stop.circle.fill")
+                    }.buttonStyle(.borderedProminent).tint(.red)
+                    Text(String(format: "%d samples · %.1f s", device.recordedSampleCount,
+                                Double(device.recordedSampleCount) / 100))
+                        .font(.caption.monospacedDigit())
+                } else {
+                    Button { device.startRecording() } label: {
+                        Label("Record", systemImage: "record.circle")
+                    }.buttonStyle(.bordered).disabled(latest == nil)
+                    if let url = device.recordingFileURL {
+                        ShareLink(item: url) { Label("Share CSV", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 17))
     }
 
     private var summarySection: some View {

@@ -14,6 +14,12 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// Gyro vs gravity tilt disagreement (degrees) at the last stop; large values mean
     /// the gyro scale, units, or axes do not match the accelerometer.
     @Published private(set) var tiltCheckDegrees: Double?
+    /// Raw-sample recording for offline diagnosis (exported as CSV).
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordedSampleCount = 0
+    @Published private(set) var recordingFileURL: URL?
+    private var recordedSamples: [MotionSample] = []
+    private let maximumRecordedSamples = 12_000 // 2 minutes at 100 Hz
     @Published private(set) var integratedGyroAngles = IntegratedGyroAngles()
     @Published private(set) var estimatedPosition = PositionEstimate()
     @Published private(set) var verticalPosition = 0.0
@@ -121,6 +127,38 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     }
 
     /// Ends the workout's rep counting (call after reading `repCount` to save it).
+    func startRecording() {
+        recordedSamples.removeAll(keepingCapacity: true)
+        recordedSampleCount = 0
+        recordingFileURL = nil
+        isRecording = true
+    }
+
+    /// Stops recording and writes the raw samples, exactly as received, to a CSV file
+    /// ready to share: t_s,dt_s,ax,ay,az,gx,gy,gz (m/s², °/s).
+    func stopRecording() {
+        isRecording = false
+        guard !recordedSamples.isEmpty else { return }
+        let start = recordedSamples[0].timestamp
+        var csv = "t_s,dt_s,ax,ay,az,gx,gy,gz\n"
+        csv.reserveCapacity(recordedSamples.count * 64)
+        for sample in recordedSamples {
+            csv += String(format: "%.4f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+                          sample.timestamp - start, sample.deltaTime,
+                          sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz)
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("smartbell-raw-\(formatter.string(from: Date())).csv")
+        do {
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+            recordingFileURL = url
+        } catch {
+            errorMessage = "Could not save recording: \(error.localizedDescription)"
+        }
+    }
+
     func stopRepCounting() {
         isCountingReps = false
         repCount = 0
@@ -234,6 +272,11 @@ final class BLEDeviceManager: NSObject, ObservableObject {
             sampleRate = elapsed > 0 ? Double(sampleArrivalTimes.count - 1) / elapsed : 0
         }
         latestSample = sample
+        if isRecording {
+            recordedSamples.append(sample)
+            recordedSampleCount = recordedSamples.count
+            if recordedSamples.count >= maximumRecordedSamples { stopRecording() }
+        }
     }
 
     /// Runs the rep tracker on one processed sample. Only called during a workout.
