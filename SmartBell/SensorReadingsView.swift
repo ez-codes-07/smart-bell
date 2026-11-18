@@ -194,6 +194,10 @@ struct SensorReadingsView: View {
                     .buttonStyle(.bordered)
                     .accessibilityHint("Sets the current position and angles to zero")
             }
+            if let warning = device.positionWarning {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+            }
             PositionAxisReading(label: "X", value: device.estimatedPosition.x)
             PositionAxisReading(label: "Y", value: device.estimatedPosition.y)
             PositionAxisReading(label: "Z", value: device.estimatedPosition.z)

@@ -14,6 +14,10 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// Gyro vs gravity tilt disagreement (degrees) at the last stop; large values mean
     /// the gyro scale, units, or axes do not match the accelerometer.
     @Published private(set) var tiltCheckDegrees: Double?
+    /// Set when the position estimate is physically implausible (speed above the
+    /// limit, or farther from start than an arm can reach): the sensor data are
+    /// inconsistent and position should not be trusted.
+    @Published private(set) var positionWarning: String?
     /// Raw-sample recording for offline diagnosis (exported as CSV).
     @Published private(set) var isRecording = false
     @Published private(set) var recordedSampleCount = 0
@@ -106,6 +110,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// restarts its baseline here too, so a rep in progress is not counted.
     func zeroPositionAndAngles() {
         positionCalculator.zeroPosition()
+        positionWarning = nil
         gyroIntegrator.reset()
         estimatedPosition = positionCalculator.position
         verticalPosition = positionCalculator.verticalPosition
@@ -171,6 +176,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         filteredSample = nil
         isStill = true
         tiltCheckDegrees = nil
+        positionWarning = nil
         gyroIntegrator.reset()
         integratedGyroAngles = gyroIntegrator.angles
         positionCalculator.reset()
@@ -258,6 +264,13 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         integratedGyroAngles = gyroIntegrator.add(motion)
         estimatedPosition = positionCalculator.add(motion, isStill: still)
         tiltCheckDegrees = positionCalculator.tiltErrorAtLastStop
+        let distanceFromStart = (estimatedPosition.x * estimatedPosition.x + estimatedPosition.y * estimatedPosition.y
+                                 + estimatedPosition.z * estimatedPosition.z).squareRoot()
+        if positionCalculator.divergenceResets > 0 || distanceFromStart > 2.0 {
+            positionWarning = "Position has diverged (\(positionCalculator.divergenceResets) speed resets, "
+                + String(format: "%.1f m from start). ", distanceFromStart)
+                + "The gyro and accelerometer data disagree. Check that the ESP32 has the latest firmware, then record a CSV."
+        }
         verticalPosition = positionCalculator.verticalPosition
         if isCountingReps {
             updateRepCount(with: motion)

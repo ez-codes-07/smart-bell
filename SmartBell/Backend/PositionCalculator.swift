@@ -50,6 +50,17 @@ struct PositionConfiguration {
     /// A movement longer than this without any stillness is abandoned: velocity is
     /// reset so an undetected stop cannot drift forever.
     var maximumMovementDuration = 15.0
+    /// Tilt correction toward measured gravity while moving (fraction per sample at
+    /// full weight). The weight falls off as |a| departs from gravity, since motion
+    /// acceleration then corrupts the gravity direction. This bounds tilt error even
+    /// if the gyro is mis-scaled or an axis is flipped, instead of letting leaked
+    /// gravity integrate into tens of metres.
+    var movingTiltCorrectionRate = 0.02
+    /// |a| − g (m/s²) at which the moving correction weight drops to 1/e.
+    var movingTiltCorrectionWidth = 1.0
+    /// A dumbbell cannot move faster than this (m/s); faster means the estimate has
+    /// diverged, so velocity is reset rather than integrated further.
+    var maximumPlausibleSpeed = 3.0
 }
 
 /// Relative position from motion samples that have already been FFT low-passed
@@ -80,6 +91,9 @@ struct PositionCalculator {
     /// Degrees between the gyro-tracked and gravity-measured tilt when the sensor last
     /// came to rest after moving. Nil until the first stop.
     private(set) var tiltErrorAtLastStop: Double?
+    /// How many times velocity exceeded `maximumPlausibleSpeed` and was reset. Any
+    /// non-zero value means the sensor data are inconsistent (e.g. gyro scale/axes).
+    private(set) var divergenceResets = 0
 
     /// Position along the gravity-aligned world Z axis established at startup.
     var verticalPosition: Double {
@@ -134,12 +148,7 @@ struct PositionCalculator {
                 tiltErrorAtLastStop = acos(cosine) * 180 / .pi
             }
             if measuredLength > 0.1 {
-                let fullCorrection = Self.rotationAligning(measured / measuredLength, to: SIMD3<Double>(0, 0, 1))
-                let partial = simd_slerp(simd_quatd(ix: 0, iy: 0, iz: 0, r: 1), simd_quatd(fullCorrection),
-                                         configuration.stillTiltCorrectionRate)
-                let correctionInInitialSensor = alignment.transpose * simd_double3x3(partial) * alignment
-                orientationFromCurrentSensor = simd_normalize(
-                    simd_quatd(correctionInInitialSensor * simd_double3x3(orientationFromCurrentSensor)))
+                pullTilt(towardMeasured: measured, fraction: configuration.stillTiltCorrectionRate)
                 rotationSensorToWorld = alignment * simd_double3x3(orientationFromCurrentSensor)
                 gravityMagnitude += (measuredLength - gravityMagnitude) * configuration.stillGravityFollowRate
             }
@@ -156,6 +165,16 @@ struct PositionCalculator {
             return position
         }
 
+        // Complementary tilt correction while moving, weighted by how close |a| is to g.
+        let measuredMoving = rotationSensorToWorld * sensorAcceleration
+        let movingLength = simd_length(measuredMoving)
+        if movingLength > 0.1 {
+            let deviation = (movingLength - gravityMagnitude) / configuration.movingTiltCorrectionWidth
+            let weight = exp(-deviation * deviation)
+            pullTilt(towardMeasured: measuredMoving, fraction: configuration.movingTiltCorrectionRate * weight)
+            rotationSensorToWorld = alignment * simd_double3x3(orientationFromCurrentSensor)
+        }
+
         let linearAcceleration = rotationSensorToWorld * sensorAcceleration - SIMD3<Double>(0, 0, gravityMagnitude)
         if let previousLinearAcceleration, dtIsValid {
             // Trapezoidal integration, first to velocity and then to position.
@@ -166,6 +185,11 @@ struct PositionCalculator {
             if movementDuration > configuration.maximumMovementDuration {
                 velocity = SIMD3<Double>(repeating: 0)
                 movementDuration = 0
+            }
+            if simd_length(velocity) > configuration.maximumPlausibleSpeed {
+                velocity = SIMD3<Double>(repeating: 0)
+                movementDuration = 0
+                divergenceResets += 1
             }
         }
         previousLinearAcceleration = linearAcceleration
@@ -181,6 +205,7 @@ struct PositionCalculator {
     /// Makes the current position the origin (a user-requested re-zero), keeping
     /// orientation, gravity, and any movement in progress.
     mutating func zeroPosition() {
+        divergenceResets = 0
         for index in recentStates.indices { recentStates[index].position -= worldPosition }
         worldPosition = SIMD3<Double>(repeating: 0)
         publishPosition()
@@ -218,6 +243,17 @@ struct PositionCalculator {
         recentStates.removeAll()
         publishPosition()
         return PositionEstimate(x: restPosition.x, y: restPosition.y, z: restPosition.z)
+    }
+
+    /// Rotates the orientation estimate by `fraction` of the way from its current
+    /// "up" to the measured specific-force direction (both in world coordinates).
+    private mutating func pullTilt(towardMeasured measured: SIMD3<Double>, fraction: Double) {
+        guard fraction > 0, let alignment = worldFromInitialSensor else { return }
+        let fullCorrection = Self.rotationAligning(simd_normalize(measured), to: SIMD3<Double>(0, 0, 1))
+        let partial = simd_slerp(simd_quatd(ix: 0, iy: 0, iz: 0, r: 1), simd_quatd(fullCorrection), fraction)
+        let correctionInInitialSensor = alignment.transpose * simd_double3x3(partial) * alignment
+        orientationFromCurrentSensor = simd_normalize(
+            simd_quatd(correctionInInitialSensor * simd_double3x3(orientationFromCurrentSensor)))
     }
 
     private mutating func recordState(dt: Double) {

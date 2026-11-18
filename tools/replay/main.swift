@@ -75,6 +75,7 @@ for (index, sample) in samples.enumerated() {
     previous = pos
     wasStill = still
 }
+print("speed-limit resets (estimate diverged): \(position.divergenceResets)")
 print(String(format: "\nlearned: gyro bias (%.3f, %.3f, %.3f) °/s, still limits gyro %.2f °/s accel %.3f m/s²",
              stillness.gyroBias.x, stillness.gyroBias.y, stillness.gyroBias.z,
              stillness.gyroLimit, stillness.accelerationLimit))
