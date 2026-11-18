@@ -1,7 +1,5 @@
 import SwiftUI
 import CoreBluetooth
-import AudioToolbox
-import UIKit
 
 struct SmartBellRootView: View {
     var body: some View {
@@ -37,7 +35,7 @@ struct HomeView: View {
                     }.padding(.top, 16)
                     HStack(spacing: 12) {
                         MetricCard(title: "WORKOUTS", value: "\(store.sessions.count)", icon: "calendar")
-                        MetricCard(title: "TOTAL REPS", value: "\(store.sessions.reduce(0) { $0 + $1.reps })", icon: "repeat")
+                        MetricCard(title: "TOTAL REPS", value: store.sessions.compactMap(\.reps).isEmpty ? "—" : "\(store.sessions.compactMap(\.reps).reduce(0, +))", icon: "repeat")
                     }
                     HStack {
                         VStack(alignment: .leading, spacing: 5) {
@@ -77,19 +75,9 @@ struct WorkoutView: View {
     @EnvironmentObject private var store: WorkoutStore
     @State private var exercise: Exercise = .bicepCurl
     @State private var weight = "10"
-    @State private var analyzer = MotionAnalyzer()
     @State private var phase: WorkoutPhase = .setup
     @State private var sessionStart: Date?
     @State private var savedMessage = false
-    @State private var setNumber = 1
-    @State private var setReps = 0
-    @State private var restSeconds = 60
-    @State private var soundEnabled = UserDefaults.standard.object(forKey: "smartbell.sound") as? Bool ?? true
-    @State private var hapticsEnabled = UserDefaults.standard.object(forKey: "smartbell.haptics") as? Bool ?? true
-
-    private let targetSets = 3
-    private let targetReps = 10
-    private let restTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -97,38 +85,18 @@ struct WorkoutView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch phase {
                     case .setup: setupPanel
-                    case .calibration: calibrationPanel
-                    case .active, .rest: activePanel
-                    case .finished: finishedPanel
+                    case .active: activePanel
                     }
                 }.padding(20)
             }.background(Palette.paper).navigationTitle("Workout")
         }
-        .onChange(of: device.latestSample) { _, sample in
-            guard let sample else { return }
-            switch phase {
-            case .calibration:
-                analyzer.process(sample, calibrating: true)
-            case .active:
-                let prior = analyzer.repCount
-                analyzer.process(sample, calibrating: false)
-                if analyzer.repCount > prior {
-                    setReps += 1
-                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-                    if soundEnabled { AudioServicesPlaySystemSound(1104) }
-                    if setReps >= targetReps { phase = setNumber >= targetSets ? .finished : .rest; restSeconds = 60 }
-                }
-            default: break
-            }
-        }
-        .onReceive(restTimer) { _ in if phase == .rest && restSeconds > 0 { restSeconds -= 1 } }
         .alert("Workout saved", isPresented: $savedMessage) { Button("Done", role: .cancel) {} }
     }
 
     private var setupPanel: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Let’s get set up").font(.system(size: 30, weight: .bold, design: .rounded))
-            Text("Choose the movement and enter the dumbbell weight.").foregroundStyle(.secondary)
+            Text("Choose the movement and enter the dumbbell weight. Rep counting and position analysis are being rebuilt.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 9) {
                 Text("EXERCISE").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
                 ForEach(Exercise.allCases) { item in
@@ -150,83 +118,27 @@ struct WorkoutView: View {
                 HStack(spacing: 8) { Image(systemName: "info.circle"); Text("Connect your Smart Bell or use Demo mode on the Device tab.") }.font(.subheadline).foregroundStyle(.secondary)
             }
             Button {
-                analyzer.beginCalibration(); setNumber = 1; setReps = 0; sessionStart = nil; phase = .calibration
-            } label: { Label("Calibrate movement", systemImage: "scope").frame(maxWidth: .infinity).padding(17) }
+                sessionStart = Date(); phase = .active
+            } label: { Label("Start workout", systemImage: "play.fill").frame(maxWidth: .infinity).padding(17) }
                 .buttonStyle(.borderedProminent).tint(Palette.green).font(.headline).disabled(!device.isConnected || Double(weight) == nil)
-            VStack(alignment: .leading, spacing: 12) {
-                Text("FEEDBACK").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
-                Toggle("Rep sound", isOn: $soundEnabled).onChange(of: soundEnabled) { _, v in UserDefaults.standard.set(v, forKey: "smartbell.sound") }
-                Toggle("Haptic feedback", isOn: $hapticsEnabled).onChange(of: hapticsEnabled) { _, v in UserDefaults.standard.set(v, forKey: "smartbell.haptics") }
-            }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 15))
-        }
-    }
-
-    private var calibrationPanel: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Calibrate your movement").font(.system(size: 28, weight: .bold, design: .rounded))
-            Text("Secure the sensor to the dumbbell. Hold it still, then perform three slow, controlled reps of your selected exercise.").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Sensor attached firmly", systemImage: "checkmark.circle.fill")
-                Label("Start from a comfortable position", systemImage: "figure.stand")
-                Label("Move at a steady, controlled pace", systemImage: "metronome")
-            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 16))
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(min(analyzer.calibrationProgress, 3))").font(.system(size: 44, weight: .bold, design: .rounded))
-                Text("/ 3 calibration reps").foregroundStyle(.secondary)
-            }
-            ProgressView(value: Double(min(analyzer.calibrationProgress, 3)), total: 3).tint(Palette.green)
-            if analyzer.isCalibrated {
-                Label("Calibration complete", systemImage: "checkmark.seal.fill").foregroundStyle(Palette.green).font(.headline)
-                Button("Start workout") { sessionStart = Date(); phase = .active }.buttonStyle(.borderedProminent).tint(Palette.green)
-            } else {
-                Text("Waiting for movement…").foregroundStyle(.secondary)
-                Button("Cancel") { analyzer.reset(); phase = .setup }.buttonStyle(.bordered)
-            }
-            dataCard
         }
     }
 
     private var activePanel: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text(exercise.rawValue).font(.title2.bold()); Spacer(); Text("SET \(setNumber) OF \(targetSets)").font(.caption.weight(.bold)).tracking(1).foregroundStyle(Palette.green) }
-            if phase == .rest {
-                VStack(spacing: 8) {
-                    Text("REST").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
-                    Text("\(restSeconds / 60):\(String(format: "%02d", restSeconds % 60))").font(.system(size: 52, weight: .bold, design: .rounded))
-                    Button("Start next set") { setNumber += 1; setReps = 0; phase = .active }
-                        .buttonStyle(.borderedProminent).tint(Palette.green).disabled(restSeconds > 0)
-                }.frame(maxWidth: .infinity).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 18))
-            }
+            Text(exercise.rawValue).font(.title2.bold())
             HStack(spacing: 12) {
-                MetricCard(title: "REPS", value: "\(setReps) / \(targetReps)", icon: "repeat")
+                MetricCard(title: "REP COUNT", value: "Unavailable", icon: "repeat")
                 MetricCard(title: "WEIGHT KG", value: weight, icon: "dumbbell.fill")
             }
-            HStack(spacing: 12) {
-                MetricCard(title: "REP SPEED", value: analyzer.lastRep.map { String(format: "%.1fs", $0.duration) } ?? "—", icon: "speedometer")
-                MetricCard(title: "GYRO °/S", value: String(format: "%.0f", analyzer.latestAngularSpeed), icon: "gyroscope")
-            }
-            HStack(spacing: 12) {
-                MetricCard(title: "PATH EXCURSION", value: analyzer.lastRep.map { String(format: "%.0f°", $0.range) } ?? "—", icon: "point.topleft.down.to.point.bottomright.curvepath")
-                MetricCard(title: "ACCEL MOTION", value: analyzer.lastRep.map { String(format: "%.2f", $0.accelerationMotion) } ?? "—", icon: "waveform.path")
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("MOVEMENT CHECK").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
-                Text(analyzer.cue.rawValue).font(.title3.weight(.semibold)).foregroundStyle(Palette.green)
-                Text("Compares movement with your calibration. This is an estimate, not a medical form assessment.").font(.footnote).foregroundStyle(.secondary)
-            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(Palette.mint, in: RoundedRectangle(cornerRadius: 16))
+            Text("Rep counting and position-path analysis are not currently active.")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white, in: RoundedRectangle(cornerRadius: 15))
             dataCard
-            Button("Finish and save workout") { finishWorkout() }.buttonStyle(.bordered).tint(.red)
+            Button("Finish and save workout") { finishWorkout(); phase = .setup }.buttonStyle(.bordered).tint(.red)
+            Button("Discard workout") { sessionStart = nil; phase = .setup }.buttonStyle(.bordered)
         }
-    }
-
-    private var finishedPanel: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 54)).foregroundStyle(Palette.green)
-            Text("Workout complete").font(.system(size: 30, weight: .bold, design: .rounded))
-            Text("\(analyzer.repCount) reps · \(exercise.rawValue) · \(weight) kg").foregroundStyle(.secondary)
-            Button("Save workout") { finishWorkout(); phase = .setup }.buttonStyle(.borderedProminent).tint(Palette.green)
-            Button("Discard") { analyzer.reset(); phase = .setup }.buttonStyle(.bordered)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private var dataCard: some View {
@@ -242,13 +154,12 @@ struct WorkoutView: View {
     private func finishWorkout() {
         guard let start = sessionStart else { return }
         let session = WorkoutSession(date: Date(), exercise: exercise.rawValue, weight: Double(weight) ?? 0,
-                                     reps: analyzer.repCount, sets: max(setNumber, 1), duration: Date().timeIntervalSince(start))
+                                     reps: nil, sets: 1, duration: Date().timeIntervalSince(start))
         store.save(session); sessionStart = nil; savedMessage = true
-        analyzer.reset()
     }
 }
 
-private enum WorkoutPhase { case setup, calibration, active, rest, finished }
+private enum WorkoutPhase { case setup, active }
 
 struct DeviceView: View {
     @EnvironmentObject private var device: BLEDeviceManager
@@ -260,7 +171,7 @@ struct DeviceView: View {
                     Text("Turn on the ESP32 and make sure it is advertising over Bluetooth.").foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         Image(systemName: device.isConnected ? "checkmark.circle.fill" : "dot.radiowaves.left.and.right").font(.title2).foregroundStyle(device.isConnected ? .green : Palette.green)
-                        VStack(alignment: .leading, spacing: 3) { Text(device.state).font(.headline); Text(device.usingDemo ? "Simulated sensor stream" : "BMI160 motion sensor over ESP32 BLE").font(.subheadline).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 3) { Text(device.state).font(.headline); Text(device.usingDemo ? "Simulated sensor stream" : "BMX160 motion sensor over ESP32 BLE").font(.subheadline).foregroundStyle(.secondary) }
                     }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 16))
                     if device.isConnected && !device.usingDemo {
                         Button("Disconnect", role: .destructive) { device.disconnect() }.buttonStyle(.bordered)
@@ -285,7 +196,7 @@ struct DeviceView: View {
                         }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 15))
                     }
                     Text("BLE packet setup").font(.headline)
-                    Text("The default decoder expects newline-delimited UTF-8 CSV: ax,ay,az,gx,gy,gz. Acceleration is in m/s² and angular velocity is in degrees per second. Service and characteristic UUIDs are discovered automatically. Update BLEConfiguration and the packet decoder to match your ESP32 firmware.").font(.footnote).foregroundStyle(.secondary)
+                    Text("The decoder accepts newline-delimited UTF-8 CSV: ax,ay,az,gx,gy,gz,dt_s. Acceleration is in m/s², angular velocity is in degrees per second, and dt_s is the measured interval in seconds. Service and characteristic UUIDs are discovered automatically. Update BLEConfiguration and the packet decoder if your ESP32 firmware differs.").font(.footnote).foregroundStyle(.secondary)
                 }.padding(20)
             }.background(Palette.paper).navigationTitle("Device")
                 .alert("Bluetooth issue", isPresented: Binding(get: { device.errorMessage != nil }, set: { if !$0 { device.errorMessage = nil } })) {
@@ -322,7 +233,10 @@ private struct SessionRow: View {
                 Text("\(session.sets) sets · \(Int(session.duration / 60)) min").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) { Text("\(session.reps) reps").font(.subheadline.bold()); Text("\(session.weight.formatted()) kg").font(.caption).foregroundStyle(.secondary) }
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(session.reps.map { "\($0) reps" } ?? "Reps unavailable").font(.subheadline.bold())
+                Text("\(session.weight.formatted()) kg").font(.caption).foregroundStyle(.secondary)
+            }
         }.padding(14).background(.white, in: RoundedRectangle(cornerRadius: 15))
     }
 }

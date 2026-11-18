@@ -2,6 +2,8 @@ import Foundation
 
 struct MotionSample: Equatable {
     let timestamp: TimeInterval
+    /// Sensor sampling interval in seconds. The hardware CSV sends this as dt_s.
+    let deltaTime: TimeInterval
     let ax: Double, ay: Double, az: Double
     let gx: Double, gy: Double, gz: Double
 
@@ -16,30 +18,12 @@ enum Exercise: String, CaseIterable, Identifiable, Codable {
     var symbol: String { self == .bicepCurl ? "figure.strengthtraining.traditional" : "figure.arms.open" }
 }
 
-enum FormCue: String {
-    case ready = "Ready when you are"
-    case good = "Rep matched your calibration"
-    case shortRange = "Short range of motion"
-    case changed = "Movement differed from calibration"
-    case slow = "Rep speed changed"
-    case calibrating = "Calibrating your movement…"
-}
-
-struct RepRecord: Codable, Identifiable {
-    var id = UUID()
-    var duration: Double
-    var intensity: Double
-    var range: Double
-    var accelerationMotion: Double
-    var cue: String
-}
-
 struct WorkoutSession: Codable, Identifiable {
     var id = UUID()
     var date: Date
     var exercise: String
     var weight: Double
-    var reps: Int
+    var reps: Int?
     var sets: Int
     var duration: TimeInterval
 }
