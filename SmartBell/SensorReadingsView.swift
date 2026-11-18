@@ -129,10 +129,15 @@ struct SensorReadingsView: View {
                 DiagnosticCard(title: "GYRO MAG", value: filtered.map { String(format: "%.1f °/s", $0.gyroMagnitude) } ?? "—", icon: "gyroscope")
             }
             HStack(spacing: 12) {
-                DiagnosticCard(title: "MOTION", value: latest == nil ? "—" : (device.isStill ? "Still" : "Moving"),
+                DiagnosticCard(title: "MOTION", value: latest == nil ? "—" : (device.isCalibrating ? "Calibrating" : (device.isStill ? "Still" : "Moving")),
                                icon: device.isStill ? "pause.circle" : "figure.strengthtraining.traditional")
                 DiagnosticCard(title: "TILT CHECK", value: device.tiltCheckDegrees.map { String(format: "%.1f°", $0) } ?? "—",
                                icon: (device.tiltCheckDegrees ?? 0) > 10 ? "exclamationmark.triangle" : "checkmark.seal")
+            }
+            if latest != nil && device.isCalibrating {
+                Label("Hold the sensor still to calibrate. Position and angles start once it has been still for about a second.",
+                      systemImage: "hand.raised.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
             }
             Text("Tilt check: tilt the sensor about 45°, hold it still, and read this value. It compares the gyro's tracked tilt with gravity at each stop. A few degrees is normal; tens of degrees means the gyro scale or axes are wrong and position will run away.")
                 .font(.caption).foregroundStyle(.secondary)

@@ -52,8 +52,21 @@ var previous = PositionEstimate()
 var wasStill = true
 print("\nt_s     still  pos x/y/z (m)              angles x/y/z (°)        tilt check")
 for (index, sample) in samples.enumerated() {
+    let limit = 16 * 9.80665
+    guard abs(sample.ax) <= limit, abs(sample.ay) <= limit, abs(sample.az) <= limit,
+          abs(sample.gx) <= 2000, abs(sample.gy) <= 2000, abs(sample.gz) <= 2000 else {
+        print(String(format: "  REJECTED impossible sample at t=%.2f", sample.timestamp))
+        continue
+    }
     let filtered = filter.add(sample)
     let (corrected, still) = stillness.process(filtered, filterIsWarmedUp: filter.isWarmedUp)
+    if stillness.isLearned && !position.isCalibrated {
+        position.calibrate(gravity: stillness.learnedGravity)
+        integrator.reset()
+        print(String(format: "  CALIBRATED at t=%.2f: up = sensor (%.2f, %.2f, %.2f) m/s², %d windows rejected for movement",
+                     sample.timestamp, stillness.learnedGravity.x, stillness.learnedGravity.y, stillness.learnedGravity.z,
+                     stillness.rejectedCalibrations))
+    }
     let motion = still
         ? MotionSample(timestamp: corrected.timestamp, deltaTime: corrected.deltaTime,
                        ax: corrected.ax, ay: corrected.ay, az: corrected.az, gx: 0, gy: 0, gz: 0)

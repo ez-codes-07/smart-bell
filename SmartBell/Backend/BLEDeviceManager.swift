@@ -11,6 +11,11 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// Low-passed, gyro-bias-corrected sample (0.25 s behind `latestSample`).
     @Published private(set) var filteredSample: MotionSample?
     @Published private(set) var isStill = true
+    /// True until the sensor has been held still long enough to calibrate "up",
+    /// gravity, and gyro bias. Position and angles stay at zero meanwhile.
+    @Published private(set) var isCalibrating = true
+    /// Raw samples discarded as physically impossible (e.g. garbled BLE lines).
+    @Published private(set) var rejectedSampleCount = 0
     /// Gyro vs gravity tilt disagreement (degrees) at the last stop; large values mean
     /// the gyro scale, units, or axes do not match the accelerometer.
     @Published private(set) var tiltCheckDegrees: Double?
@@ -175,6 +180,8 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         stillnessDetector.reset()
         filteredSample = nil
         isStill = true
+        isCalibrating = true
+        rejectedSampleCount = 0
         tiltCheckDegrees = nil
         positionWarning = nil
         gyroIntegrator.reset()
@@ -250,10 +257,25 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     }
 
     private func publish(_ sample: MotionSample) {
+        // Drop physically impossible readings (beyond the sensor's ±16 g / ±2000 °/s
+        // full scale), e.g. a garbled BLE line: one bad value would otherwise be held
+        // across the filter window and corrupt calibration.
+        let limitAcceleration = 16 * standardGravity
+        guard abs(sample.ax) <= limitAcceleration, abs(sample.ay) <= limitAcceleration, abs(sample.az) <= limitAcceleration,
+              abs(sample.gx) <= 2000, abs(sample.gy) <= 2000, abs(sample.gz) <= 2000 else {
+            rejectedSampleCount += 1
+            return
+        }
         // Raw samples feed the diagnostics list. Angles,
         // position, and rep counting use the FFT low-passed, bias-corrected stream.
         let filtered = motionFilter.add(sample)
         let (corrected, still) = stillnessDetector.process(filtered, filterIsWarmedUp: motionFilter.isWarmedUp)
+        isCalibrating = !stillnessDetector.isLearned
+        if stillnessDetector.isLearned && !positionCalculator.isCalibrated {
+            // Calibration just succeeded: define "up" from the validated still period.
+            positionCalculator.calibrate(gravity: stillnessDetector.learnedGravity)
+            gyroIntegrator.reset()
+        }
         // At rest, treat rotation as exactly zero so angles do not creep from noise.
         let motion = still
             ? MotionSample(timestamp: corrected.timestamp, deltaTime: corrected.deltaTime,

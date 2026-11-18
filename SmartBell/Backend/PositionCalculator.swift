@@ -65,6 +65,7 @@ struct PositionConfiguration {
 
 /// Relative position from motion samples that have already been FFT low-passed
 /// and gyro-bias corrected, with a stillness flag from `StillnessDetector`.
+/// Call `calibrate(gravity:)` with the detector's learned gravity before use.
 ///
 /// While moving: rotate acceleration into a gravity-aligned world frame, subtract
 /// gravity, and integrate twice. When stillness begins: velocity must truly be zero,
@@ -109,15 +110,8 @@ struct PositionCalculator {
         let dt = sample.deltaTime
         let dtIsValid = dt.isFinite && dt > 0 && dt <= 0.1
 
-        // Define world Z as the initial gravity/up direction, independent of how
-        // the sensor is mounted. The sensor is assumed still at startup.
-        if worldFromInitialSensor == nil {
-            let magnitude = simd_length(sensorAcceleration)
-            worldFromInitialSensor = magnitude > 0.1
-                ? Self.rotationAligning(sensorAcceleration / magnitude, to: SIMD3<Double>(0, 0, 1))
-                : matrix_identity_double3x3
-            if magnitude > 0.1 { gravityMagnitude = magnitude }
-        }
+        // Nothing is estimated until `calibrate(gravity:)` has defined "up".
+        guard worldFromInitialSensor != nil else { return position }
 
         // Integrate body rates as a quaternion so simultaneous axis rotations do
         // not rely on treating gyro-integrated Euler angles as independent.
@@ -200,6 +194,20 @@ struct PositionCalculator {
 
     mutating func reset() {
         self = PositionCalculator(configuration: configuration)
+    }
+
+    var isCalibrated: Bool { worldFromInitialSensor != nil }
+
+    /// Starts estimation with world Z along `gravity`: the mean sensor-frame
+    /// acceleration over a validated still period, so "up" is correct for any
+    /// mounting and is not taken from a single (possibly moving or corrupt) sample.
+    /// Position, velocity, and orientation restart from zero.
+    mutating func calibrate(gravity: SIMD3<Double>) {
+        let magnitude = simd_length(gravity)
+        guard magnitude > 0.1 else { return }
+        self = PositionCalculator(configuration: configuration)
+        worldFromInitialSensor = Self.rotationAligning(gravity / magnitude, to: SIMD3<Double>(0, 0, 1))
+        gravityMagnitude = magnitude
     }
 
     /// Makes the current position the origin (a user-requested re-zero), keeping

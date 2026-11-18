@@ -212,9 +212,9 @@ struct MotionSampleLowPassFilter {
 /// Tuning for stillness detection. Limits are learned from the sensor's own
 /// filtered signal at start-up rather than fixed; the ranges only bound that learning.
 struct StillnessConfiguration {
-    /// Filtered samples, after the low-pass warm-up, used to learn gyro bias, gravity,
-    /// and the at-rest signal level. With the warm-up, hold the sensor still for about
-    /// the first 1.5 s.
+    /// Filtered samples, after the low-pass warm-up, used to learn gyro bias, gravity
+    /// direction, and the at-rest signal level. With the warm-up, hold the sensor
+    /// still for about the first 1.5 s; if it moves, calibration waits and retries.
     var learningSamples = 75
     /// Stillness requires every filtered sample in this window to be within limits
     /// (0.3 s at 100 Hz). A single quiet instant mid-rep is not enough.
@@ -229,6 +229,13 @@ struct StillnessConfiguration {
     var stillAdaptationRate = 0.01
     /// Largest per-axis gyro bias (°/s) accepted from start-up learning.
     var maximumInitialGyroBias = 5.0
+    /// Start-up calibration is rejected (and retried) unless the sensor really was
+    /// still: the filtered gyro stays within this many °/s of its mean (leaves room
+    /// for filtered tremor), the acceleration vector within this many m/s² of its
+    /// mean (about 3° of tilt), and |a| within this many m/s² of standard gravity.
+    var calibrationMaximumGyroDeviation = 15.0
+    var calibrationMaximumAccelerationDeviation = 0.5
+    var calibrationMaximumGravityError = 1.5
 }
 
 /// Decides whether the sensor is still from the FFT low-passed stream, and learns
@@ -240,9 +247,14 @@ struct StillnessDetector {
     private(set) var gyroLimit = 1.0
     private(set) var accelerationLimit = 0.1
     private(set) var isLearned = false
+    /// Mean acceleration vector (sensor frame) during a validated still calibration;
+    /// its direction defines "up" for the position estimate.
+    private(set) var learnedGravity = SIMD3<Double>(0, 0, 9.80665)
+    /// Calibration windows rejected because the sensor was moving.
+    private(set) var rejectedCalibrations = 0
     private var gravityMagnitude = 9.80665
     private var learningGyro: [SIMD3<Double>] = []
-    private var learningAccelerationMagnitude: [Double] = []
+    private var learningAcceleration: [SIMD3<Double>] = []
     private var quietRun = 0
 
     init(configuration: StillnessConfiguration = StillnessConfiguration()) {
@@ -255,7 +267,7 @@ struct StillnessDetector {
     mutating func process(_ filtered: MotionSample, filterIsWarmedUp: Bool) -> (sample: MotionSample, isStill: Bool) {
         let measuredGyro = SIMD3(filtered.gx, filtered.gy, filtered.gz)
         guard isLearned else {
-            if filterIsWarmedUp { learn(gyro: measuredGyro, accelerationMagnitude: filtered.accelerationMagnitude) }
+            if filterIsWarmedUp { learn(gyro: measuredGyro, acceleration: SIMD3(filtered.ax, filtered.ay, filtered.az)) }
             return (MotionSample(timestamp: filtered.timestamp, deltaTime: filtered.deltaTime,
                                  ax: filtered.ax, ay: filtered.ay, az: filtered.az, gx: 0, gy: 0, gz: 0), true)
         }
@@ -279,28 +291,45 @@ struct StillnessDetector {
         self = StillnessDetector(configuration: configuration)
     }
 
-    private mutating func learn(gyro: SIMD3<Double>, accelerationMagnitude: Double) {
+    private mutating func learn(gyro: SIMD3<Double>, acceleration: SIMD3<Double>) {
         learningGyro.append(gyro)
-        learningAccelerationMagnitude.append(accelerationMagnitude)
+        learningAcceleration.append(acceleration)
         guard learningGyro.count >= configuration.learningSamples else { return }
 
         let count = Double(learningGyro.count)
-        // Clamp to a plausible MEMS gyro bias so movement during start-up is not
-        // mistaken for a large bias (still-time refinement corrects it later).
         let meanGyro = learningGyro.reduce(SIMD3<Double>(repeating: 0), +) / count
+        let meanAcceleration = learningAcceleration.reduce(SIMD3<Double>(repeating: 0), +) / count
+        let gyroSpread = learningGyro.map { simd_length($0 - meanGyro) }.max() ?? 0
+        let accelerationSpread = learningAcceleration.map { simd_length($0 - meanAcceleration) }.max() ?? 0
         let biasLimit = configuration.maximumInitialGyroBias
-        gyroBias = simd_clamp(meanGyro, SIMD3(repeating: -biasLimit), SIMD3(repeating: biasLimit))
-        gravityMagnitude = learningAccelerationMagnitude.reduce(0, +) / count
+
+        // Only calibrate from a window in which the sensor was genuinely still;
+        // otherwise "up", gravity, bias, and the stillness limits would all be wrong.
+        let wasStill = gyroSpread <= configuration.calibrationMaximumGyroDeviation
+            && abs(meanGyro.x) <= biasLimit && abs(meanGyro.y) <= biasLimit && abs(meanGyro.z) <= biasLimit
+            && accelerationSpread <= configuration.calibrationMaximumAccelerationDeviation
+            && abs(simd_length(meanAcceleration) - 9.80665) <= configuration.calibrationMaximumGravityError
+        guard wasStill else {
+            rejectedCalibrations += 1
+            learningGyro = []
+            learningAcceleration = []
+            return
+        }
+
+        gyroBias = meanGyro
+        learnedGravity = meanAcceleration
+        gravityMagnitude = simd_length(meanAcceleration)
 
         // Largest at-rest deviation: filtered noise plus any leftover tremor.
+        let magnitudes = learningAcceleration.map { simd_length($0) }
         let gyroRestLevel = learningGyro.map { simd_length($0 - gyroBias) }.max() ?? 0
-        let accelerationRestLevel = learningAccelerationMagnitude.map { abs($0 - gravityMagnitude) }.max() ?? 0
+        let accelerationRestLevel = magnitudes.map { abs($0 - gravityMagnitude) }.max() ?? 0
         gyroLimit = Self.clamp(configuration.restLevelMultiplier * gyroRestLevel, to: configuration.gyroLimitRange)
         accelerationLimit = Self.clamp(configuration.restLevelMultiplier * accelerationRestLevel,
                                        to: configuration.accelerationLimitRange)
         isLearned = true
         learningGyro = []
-        learningAccelerationMagnitude = []
+        learningAcceleration = []
     }
 
     private static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
