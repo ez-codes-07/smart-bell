@@ -37,6 +37,16 @@ void setup() {
     while (true) delay(1000);
   }
 
+  // DFRobot_BMX160::begin() never writes the gyro range register, so the chip stays
+  // at its reset range (±2000 °/s) while getAllData() scales with the ±250 °/s factor:
+  // every gyro reading came out 8x too small, which made the app's position estimate
+  // run away whenever the dumbbell tilted. setGyroRange() writes the register and the
+  // matching scale together; it must run after begin(), which soft-resets the chip.
+  // ±1000 °/s leaves headroom for fast curls at 0.03 °/s resolution.
+  bmx160.setGyroRange(eGyroRange_1000DPS);
+  // The accelerometer's reset range (±2 g) already matches the library's default
+  // m/s² scale. Do not call setAccelRange(): it switches to a ×10 (not ×9.8) scale.
+
   BLEDevice::init(DEVICE_NAME);
   BLEDevice::setMTU(100);
 

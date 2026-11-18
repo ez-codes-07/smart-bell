@@ -77,6 +77,9 @@ struct PositionCalculator {
                                 position: SIMD3<Double>)] = []
     private let recentStateCapacity = 300
     private(set) var position = PositionEstimate()
+    /// Degrees between the gyro-tracked and gravity-measured tilt when the sensor last
+    /// came to rest after moving. Nil until the first stop.
+    private(set) var tiltErrorAtLastStop: Double?
 
     /// Position along the gravity-aligned world Z axis established at startup.
     var verticalPosition: Double {
@@ -123,6 +126,13 @@ struct PositionCalculator {
             // Yaw is unobservable without a magnetometer but does not affect world Z.
             let measured = rotationSensorToWorld * sensorAcceleration
             let measuredLength = simd_length(measured)
+            if measuredLength > 0.1 && movementDuration > 0 {
+                // First still sample after a movement: how far the gyro-tracked tilt
+                // is from the tilt gravity shows. A few degrees is normal; tens of
+                // degrees means gyro and accelerometer disagree (scale, units, or axes).
+                let cosine = min(max(measured.z / measuredLength, -1), 1)
+                tiltErrorAtLastStop = acos(cosine) * 180 / .pi
+            }
             if measuredLength > 0.1 {
                 let fullCorrection = Self.rotationAligning(measured / measuredLength, to: SIMD3<Double>(0, 0, 1))
                 let partial = simd_slerp(simd_quatd(ix: 0, iy: 0, iz: 0, r: 1), simd_quatd(fullCorrection),

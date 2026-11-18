@@ -11,6 +11,9 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// Low-passed, gyro-bias-corrected sample (0.25 s behind `latestSample`).
     @Published private(set) var filteredSample: MotionSample?
     @Published private(set) var isStill = true
+    /// Gyro vs gravity tilt disagreement (degrees) at the last stop; large values mean
+    /// the gyro scale, units, or axes do not match the accelerometer.
+    @Published private(set) var tiltCheckDegrees: Double?
     @Published private(set) var integratedGyroAngles = IntegratedGyroAngles()
     @Published private(set) var estimatedPosition = PositionEstimate()
     @Published private(set) var verticalPosition = 0.0
@@ -129,6 +132,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         stillnessDetector.reset()
         filteredSample = nil
         isStill = true
+        tiltCheckDegrees = nil
         gyroIntegrator.reset()
         integratedGyroAngles = gyroIntegrator.angles
         positionCalculator.reset()
@@ -215,6 +219,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         isStill = still
         integratedGyroAngles = gyroIntegrator.add(motion)
         estimatedPosition = positionCalculator.add(motion, isStill: still)
+        tiltCheckDegrees = positionCalculator.tiltErrorAtLastStop
         verticalPosition = positionCalculator.verticalPosition
         if isCountingReps {
             updateRepCount(with: motion)
