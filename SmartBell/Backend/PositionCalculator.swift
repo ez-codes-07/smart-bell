@@ -44,40 +44,52 @@ struct PositionCalculator {
     private let standardGravity = 9.80665
     private let stationaryGyroThreshold = 3.0 // degrees/second
     private let stationaryAccelerationTolerance = 0.4 // m/s² from 1 g
-    private var gyroIntegrator = GyroscopeIntegrator()
+    private var worldFromInitialSensor: simd_double3x3?
+    private var orientationFromCurrentSensor = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
+    private var previousGyroRate: SIMD3<Double>?
     private var gravityInWorld: SIMD3<Double>?
     private var previousLinearAcceleration: SIMD3<Double>?
     private var velocity = SIMD3<Double>(repeating: 0)
     private(set) var position = PositionEstimate()
 
-    mutating func add(_ sample: MotionSample) -> PositionEstimate {
-        let angles = gyroIntegrator.add(sample)
-        let radiansPerDegree = Double.pi / 180
-        let roll = angles.x * radiansPerDegree
-        let pitch = angles.y * radiansPerDegree
-        let yaw = angles.z * radiansPerDegree
+    /// Position along the gravity-aligned world Z axis established at startup.
+    var verticalPosition: Double {
+        position.z
+    }
 
-        // Sensor-frame vector -> starting/world frame, using the chosen Z-Y-X convention.
-        let rotationX = simd_double3x3(rows: [
-            SIMD3<Double>(1, 0, 0),
-            SIMD3<Double>(0, cos(roll), -sin(roll)),
-            SIMD3<Double>(0, sin(roll), cos(roll))
-        ])
-        let rotationY = simd_double3x3(rows: [
-            SIMD3<Double>(cos(pitch), 0, sin(pitch)),
-            SIMD3<Double>(0, 1, 0),
-            SIMD3<Double>(-sin(pitch), 0, cos(pitch))
-        ])
-        let rotationZ = simd_double3x3(rows: [
-            SIMD3<Double>(cos(yaw), -sin(yaw), 0),
-            SIMD3<Double>(sin(yaw), cos(yaw), 0),
-            SIMD3<Double>(0, 0, 1)
-        ])
+    mutating func add(_ sample: MotionSample) -> PositionEstimate {
         let sensorAcceleration = SIMD3<Double>(sample.ax, sample.ay, sample.az)
-        let rotationSensorToWorld = rotationZ * rotationY * rotationX
+
+        // Define world Z as the initial gravity/up direction, independent of how
+        // the sensor is mounted. The sensor should be motionless at startup.
+        if worldFromInitialSensor == nil {
+            let magnitude = simd_length(sensorAcceleration)
+            worldFromInitialSensor = magnitude > 0.1
+                ? Self.rotationAligning(sensorAcceleration / magnitude, to: SIMD3<Double>(0, 0, 1))
+                : matrix_identity_double3x3
+        }
+
+        // Integrate body rates as a quaternion so simultaneous axis rotations do
+        // not rely on treating gyro-integrated Euler angles as independent.
+        let rateScale = Double.pi / 180
+        let gyroRate = SIMD3<Double>(sample.gx, sample.gy, sample.gz) * rateScale
+        if let previousGyroRate,
+           sample.deltaTime.isFinite, sample.deltaTime > 0, sample.deltaTime <= 0.1 {
+            let averageRate = (previousGyroRate + gyroRate) * 0.5
+            let angularSpeed = simd_length(averageRate)
+            if angularSpeed > 1e-9 {
+                let deltaRotation = simd_quatd(angle: angularSpeed * sample.deltaTime,
+                                               axis: averageRate / angularSpeed)
+                orientationFromCurrentSensor = simd_normalize(orientationFromCurrentSensor * deltaRotation)
+            }
+        }
+        self.previousGyroRate = gyroRate
+
+        let rotationSensorToInitialSensor = simd_double3x3(orientationFromCurrentSensor)
+        let rotationSensorToWorld = worldFromInitialSensor! * rotationSensorToInitialSensor
         let worldAcceleration = rotationSensorToWorld * sensorAcceleration
 
-        // Establish gravity from the first sample; this assumes the sensor starts still.
+        // Establish the initial gravity estimate after aligning world Z.
         if gravityInWorld == nil {
             gravityInWorld = worldAcceleration
             previousLinearAcceleration = SIMD3<Double>(repeating: 0)
@@ -87,9 +99,23 @@ struct PositionCalculator {
         let appearsStationary = sample.gyroMagnitude < stationaryGyroThreshold &&
             abs(sample.accelerationMagnitude - standardGravity) < stationaryAccelerationTolerance
         if appearsStationary {
-            // Adapt the gravity estimate while still and apply a zero-velocity update.
+            // Correct accumulated gyro tilt from measured gravity while still.
+            // This constrains roll/pitch drift before the next movement; yaw remains
+            // unobservable without a magnetometer, but does not change world Z.
+            let measuredGravityDirection = simd_normalize(worldAcceleration)
+            let correctionInWorld = Self.rotationAligning(
+                measuredGravityDirection,
+                to: SIMD3<Double>(0, 0, 1)
+            )
+            let alignment = worldFromInitialSensor!
+            let correctionInInitialSensor = alignment.transpose * correctionInWorld * alignment
+            let correctedOrientation = correctionInInitialSensor * simd_double3x3(orientationFromCurrentSensor)
+            orientationFromCurrentSensor = simd_normalize(simd_quatd(correctedOrientation))
+            let correctedWorldAcceleration = alignment * correctedOrientation * sensorAcceleration
+
+            // Adapt gravity and apply a zero-velocity update while still.
             let gravityFollowRate = 0.02
-            gravityInWorld = gravityInWorld! * (1 - gravityFollowRate) + worldAcceleration * gravityFollowRate
+            gravityInWorld = gravityInWorld! * (1 - gravityFollowRate) + correctedWorldAcceleration * gravityFollowRate
             previousLinearAcceleration = SIMD3<Double>(repeating: 0)
             velocity = SIMD3<Double>(repeating: 0)
             return position
@@ -119,10 +145,41 @@ struct PositionCalculator {
     }
 
     mutating func reset() {
-        gyroIntegrator.reset()
+        worldFromInitialSensor = nil
+        orientationFromCurrentSensor = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
+        previousGyroRate = nil
         gravityInWorld = nil
         previousLinearAcceleration = nil
         velocity = SIMD3<Double>(repeating: 0)
         position = PositionEstimate()
+    }
+
+    /// Starts a fresh relative-position segment while preserving attitude and gravity references.
+    mutating func rebasePosition() {
+        position = PositionEstimate()
+        velocity = SIMD3<Double>(repeating: 0)
+        previousLinearAcceleration = SIMD3<Double>(repeating: 0)
+    }
+
+    private static func rotationAligning(_ source: SIMD3<Double>, to target: SIMD3<Double>) -> simd_double3x3 {
+        let axis = simd_cross(source, target)
+        let cosine = simd_dot(source, target)
+        let sineSquared = simd_dot(axis, axis)
+
+        if sineSquared < 1e-12 {
+            if cosine >= 0 { return matrix_identity_double3x3 }
+            return simd_double3x3(rows: [
+                SIMD3<Double>(1, 0, 0),
+                SIMD3<Double>(0, -1, 0),
+                SIMD3<Double>(0, 0, -1)
+            ])
+        }
+
+        let skew = simd_double3x3(rows: [
+            SIMD3<Double>(0, -axis.z, axis.y),
+            SIMD3<Double>(axis.z, 0, -axis.x),
+            SIMD3<Double>(-axis.y, axis.x, 0)
+        ])
+        return matrix_identity_double3x3 + skew + (skew * skew) * ((1 - cosine) / sineSquared)
     }
 }

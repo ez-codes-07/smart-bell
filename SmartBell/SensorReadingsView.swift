@@ -31,6 +31,9 @@ struct SensorReadingsView: View {
                 positionTrail.removeFirst(positionTrail.count - 600)
             }
         }
+        .onChange(of: device.repCount) { _, _ in
+            positionTrail = [PositionEstimate()]
+        }
         .onChange(of: device.state) { _, state in
             if state.hasPrefix("Connecting") || state == "Demo sensor connected" {
                 positionTrail.removeAll(keepingCapacity: true)
@@ -146,6 +149,7 @@ struct SensorReadingsView: View {
             PositionAxisReading(label: "X", value: device.estimatedPosition.x)
             PositionAxisReading(label: "Y", value: device.estimatedPosition.y)
             PositionAxisReading(label: "Z", value: device.estimatedPosition.z)
+            PositionAxisReading(label: "Vertical", value: device.verticalPosition)
             InteractivePositionPlot(points: positionTrail)
             Text("Experimental double integration with stationary gravity correction and zero-velocity updates. Slow movement may be treated as still, and position estimates can still drift.")
                 .font(.caption).foregroundStyle(.secondary)

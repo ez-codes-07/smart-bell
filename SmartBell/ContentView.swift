@@ -96,7 +96,7 @@ struct WorkoutView: View {
     private var setupPanel: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Let’s get set up").font(.system(size: 30, weight: .bold, design: .rounded))
-            Text("Choose the movement and enter the dumbbell weight. Rep counting and position analysis are being rebuilt.").foregroundStyle(.secondary)
+            Text("Choose the movement and enter the dumbbell weight. Rep detection uses movement signals tailored to the selected exercise.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 9) {
                 Text("EXERCISE").font(.caption.weight(.bold)).tracking(1).foregroundStyle(.secondary)
                 ForEach(Exercise.allCases) { item in
@@ -118,6 +118,7 @@ struct WorkoutView: View {
                 HStack(spacing: 8) { Image(systemName: "info.circle"); Text("Connect your Smart Bell or use Demo mode on the Device tab.") }.font(.subheadline).foregroundStyle(.secondary)
             }
             Button {
+                device.resetRepCounting(for: exercise)
                 sessionStart = Date(); phase = .active
             } label: { Label("Start workout", systemImage: "play.fill").frame(maxWidth: .infinity).padding(17) }
                 .buttonStyle(.borderedProminent).tint(Palette.green).font(.headline).disabled(!device.isConnected || Double(weight) == nil)
@@ -128,10 +129,11 @@ struct WorkoutView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(exercise.rawValue).font(.title2.bold())
             HStack(spacing: 12) {
-                MetricCard(title: "REP COUNT", value: "Unavailable", icon: "repeat")
+                MetricCard(title: "REP COUNT", value: "\(device.repCount)", icon: "repeat")
                 MetricCard(title: "WEIGHT KG", value: weight, icon: "dumbbell.fill")
             }
-            Text("Rep counting and position-path analysis are not currently active.")
+            repProgressCard
+            Text(repTrackingDescription)
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white, in: RoundedRectangle(cornerRadius: 15))
@@ -151,10 +153,37 @@ struct WorkoutView: View {
         }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 15))
     }
 
+    private var repTrackingDescription: String {
+        switch exercise {
+        case .bicepCurl:
+            return "A curl counts when gyro-angle excursion reaches its threshold and returns near its starting angle. Inertial height is too drift-prone to use for curl counting."
+        case .shoulderPress:
+            return "Press tracking looks for a position-led upward stroke, angle change, top reversal, and controlled return. Thresholds are experimental and need tuning with real sensor recordings."
+        }
+    }
+
+    private var repProgressCard: some View {
+        let progress = device.repTrackingProgress
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(progress.phase).font(.headline)
+            if progress.positionThreshold > 0 {
+                Text(String(format: "%@: %.2f / %.2f m", progress.positionLabel,
+                            progress.positionExcursion, progress.positionThreshold))
+            }
+            if progress.angleThreshold > 0 {
+                Text(String(format: "Angle excursion: %.1f / %.1f°",
+                            progress.angleExcursion, progress.angleThreshold))
+            }
+        }
+        .font(.caption.monospacedDigit())
+        .padding(15).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 15))
+    }
+
     private func finishWorkout() {
         guard let start = sessionStart else { return }
         let session = WorkoutSession(date: Date(), exercise: exercise.rawValue, weight: Double(weight) ?? 0,
-                                     reps: nil, sets: 1, duration: Date().timeIntervalSince(start))
+                                     reps: device.repCount, sets: 1, duration: Date().timeIntervalSince(start))
         store.save(session); sessionStart = nil; savedMessage = true
     }
 }

@@ -10,6 +10,9 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var latestSample: MotionSample?
     @Published private(set) var integratedGyroAngles = IntegratedGyroAngles()
     @Published private(set) var estimatedPosition = PositionEstimate()
+    @Published private(set) var verticalPosition = 0.0
+    @Published private(set) var repCount = 0
+    @Published private(set) var repTrackingProgress = RepTrackingProgress()
     @Published private(set) var usingDemo = false
     @Published private(set) var sampleCount = 0
     @Published private(set) var sampleRate = 0.0
@@ -29,6 +32,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private var previousDecodedTimestamp: TimeInterval?
     private var gyroIntegrator = GyroscopeIntegrator()
     private var positionCalculator = PositionCalculator()
+    private var repTracker = ExerciseRepTracker()
 
     override init() {
         super.init()
@@ -78,11 +82,18 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         if usingDemo { usingDemo = false; isConnected = false; state = "Disconnected" }
     }
 
+    func resetRepCounting(for exercise: Exercise) {
+        repTracker.reset(for: exercise)
+        repCount = 0
+        repTrackingProgress = repTracker.progress
+    }
+
     private func resetIntegratedAngles() {
         gyroIntegrator.reset()
         integratedGyroAngles = gyroIntegrator.angles
         positionCalculator.reset()
         estimatedPosition = positionCalculator.position
+        verticalPosition = positionCalculator.verticalPosition
     }
 
     private func emitDemoSample() {
@@ -138,6 +149,22 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private func publish(_ sample: MotionSample) {
         integratedGyroAngles = gyroIntegrator.add(sample)
         estimatedPosition = positionCalculator.add(sample)
+        verticalPosition = positionCalculator.verticalPosition
+        let updatedRepCount = repTracker.update(sample: sample, position: estimatedPosition,
+                                                verticalPosition: verticalPosition, angles: integratedGyroAngles)
+        if updatedRepCount > repCount {
+            // The detector has reached the eccentric return. Re-zero the local
+            // position and displayed angle baselines before the next repetition.
+            positionCalculator.rebasePosition()
+            gyroIntegrator.reset()
+            estimatedPosition = positionCalculator.position
+            verticalPosition = positionCalculator.verticalPosition
+            integratedGyroAngles = gyroIntegrator.angles
+            repTracker.rebaseForNextRep(position: estimatedPosition, verticalPosition: verticalPosition,
+                                        angles: integratedGyroAngles)
+        }
+        repCount = updatedRepCount
+        repTrackingProgress = repTracker.progress
         let now = Date()
         sampleCount += 1
         lastSampleDate = now

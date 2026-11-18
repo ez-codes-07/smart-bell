@@ -10,7 +10,8 @@ Smart Bell is a native iOS app for dumbbell workout tracking. An inertial sensor
 - `SmartBell/ContentView.swift`: Home, Workout, Device, and History tabs and workout flow.
 - `SmartBell/SensorReadingsView.swift`: temporary diagnostics tab for raw axes, recent samples, sample count/rate, and last-sample age.
 - `SmartBell/Backend/BLEDeviceManager.swift`: CoreBluetooth scan/connect/notify handling and simulated sample source.
-- `SmartBell/Backend/PositionCalculator.swift`: experimental per-axis gyro integration and relative position estimator using composed Z-Y-X rotation matrices, transpose-based gravity transformation, gravity adaptation while stationary, zero-velocity updates, and double integration. Rep analysis is being rebuilt.
+- `SmartBell/Backend/PositionCalculator.swift`: per-axis gyro display integration plus an experimental quaternion-based relative position estimator, gravity-aligned world Z, stationary accelerometer tilt correction and gravity adaptation, zero-velocity updates, and double integration.
+- `SmartBell/Backend/RepTracking.swift`: exercise-specific experimental rep algorithms for bicep curls and shoulder presses. Curls use gyro-angle excursion/return because the inertial height estimate is too drift-prone; presses use a position-led stroke, angle confirmation, top reversal, and return.
 - `SmartBell/Backend/Models.swift`: motion samples (including sensor delta time), exercise, and workout data types plus BLE configuration.
 - `SmartBell/Backend/WorkoutStore.swift`: local workout persistence via UserDefaults.
 - `SmartBell.xcodeproj`: iOS app project. The target uses automatic code signing; each developer selects their own Team in Xcode for device deployment.
@@ -22,7 +23,7 @@ The ESP32 sketch targets 100 Hz and advertises as `SmartBell`. It sends newline-
 
 ## Current product behavior and limits
 
-The app currently supports exercise and weight selection, local workout history, BLE status, a 100 Hz nominal demo stream, and the Sensor Readings tab with raw axes, integrated gyro angles, and experimental relative XYZ position. The Workout screen marks rep counting unavailable. Position uses threshold-based stationary detection, which can suppress slow motion and does not eliminate drift during movement; it is not validated. Do not claim accuracy or medical-grade assessment.
+The app currently supports exercise and weight selection, local workout history, BLE status, a 100 Hz nominal demo stream, exercise-specific experimental rep counting, and Sensor Readings with raw axes, angles, and relative XYZ position. At rep completion, relative position and displayed angles are rebased for the next cycle. Position can drift within a rep; thresholds are provisional and require labeled sensor recordings. Do not claim accuracy or medical-grade assessment.
 
 ## Development notes
 
