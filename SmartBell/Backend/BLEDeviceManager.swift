@@ -1,4 +1,5 @@
 import Foundation
+import simd
 import Combine
 import CoreBluetooth
 
@@ -16,6 +17,11 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     @Published private(set) var isCalibrating = true
     /// Raw samples discarded as physically impossible (e.g. garbled BLE lines).
     @Published private(set) var rejectedSampleCount = 0
+    /// Automatic gyro correction (scale, axis signs, axis order) learned by comparing
+    /// gyro rotation with accelerometer tilt across movements; saved on the phone.
+    @Published private(set) var gyroCorrectionSummary = GyroCorrection.identity.summary
+    @Published private(set) var gyroCalibrationStatus = "Watching for tilting movements"
+    @Published private(set) var gyroCorrectionMessage: String?
     /// Gyro vs gravity tilt disagreement (degrees) at the last stop; large values mean
     /// the gyro scale, units, or axes do not match the accelerometer.
     @Published private(set) var tiltCheckDegrees: Double?
@@ -61,11 +67,28 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     /// Learns gyro bias and noise at start-up, then flags stillness from the
     /// filtered stream so position and angles hold when the dumbbell is at rest.
     private var stillnessDetector = StillnessDetector()
+    private var gyroCalibrator = GyroAxisCalibrator()
+    private var gyroCorrection = GyroCorrection.identity
+    private static let gyroCorrectionKey = "SmartBell.gyroCorrection"
     private var repTracker = ExerciseRepTracker()
 
     override init() {
         super.init()
+        if let data = UserDefaults.standard.data(forKey: Self.gyroCorrectionKey),
+           let saved = try? JSONDecoder().decode(GyroCorrection.self, from: data) {
+            gyroCorrection = saved
+            gyroCorrectionSummary = saved.summary
+        }
         central = CBCentralManager(delegate: self, queue: .main)
+    }
+
+    /// Forgets the learned gyro correction and recalibrates.
+    func resetGyroCorrection() {
+        gyroCorrection = .identity
+        UserDefaults.standard.removeObject(forKey: Self.gyroCorrectionKey)
+        gyroCorrectionSummary = gyroCorrection.summary
+        gyroCorrectionMessage = nil
+        resetIntegratedAngles()
     }
 
     func scan() {
@@ -178,6 +201,7 @@ final class BLEDeviceManager: NSObject, ObservableObject {
     private func resetIntegratedAngles() {
         motionFilter.reset()
         stillnessDetector.reset()
+        gyroCalibrator.reset()
         filteredSample = nil
         isStill = true
         isCalibrating = true
@@ -266,15 +290,23 @@ final class BLEDeviceManager: NSObject, ObservableObject {
             rejectedSampleCount += 1
             return
         }
-        // Raw samples feed the diagnostics list. Angles,
-        // position, and rep counting use the FFT low-passed, bias-corrected stream.
-        let filtered = motionFilter.add(sample)
+        defer { recordArrival(of: sample) }
+        // Raw samples feed the diagnostics list and recordings. Angles, position, and
+        // rep counting use the gyro-corrected, FFT low-passed, bias-corrected stream.
+        let filtered = motionFilter.add(gyroCorrection.apply(to: sample))
         let (corrected, still) = stillnessDetector.process(filtered, filterIsWarmedUp: motionFilter.isWarmedUp)
         isCalibrating = !stillnessDetector.isLearned
         if stillnessDetector.isLearned && !positionCalculator.isCalibrated {
             // Calibration just succeeded: define "up" from the validated still period.
             positionCalculator.calibrate(gravity: stillnessDetector.learnedGravity)
             gyroIntegrator.reset()
+        }
+        if stillnessDetector.isLearned {
+            if let update = gyroCalibrator.observe(corrected, isStill: still) {
+                adoptGyroCorrection(GyroCorrection(matrix: update.matrix * gyroCorrection.matrix))
+                return
+            }
+            gyroCalibrationStatus = gyroCalibrator.status
         }
         // At rest, treat rotation as exactly zero so angles do not creep from noise.
         let motion = still
@@ -291,12 +323,16 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         if positionCalculator.divergenceResets > 0 || distanceFromStart > 2.0 {
             positionWarning = "Position has diverged (\(positionCalculator.divergenceResets) speed resets, "
                 + String(format: "%.1f m from start). ", distanceFromStart)
-                + "The gyro and accelerometer data disagree. Check that the ESP32 has the latest firmware, then record a CSV."
+                + "The gyro and accelerometer data disagree. Do a few tilt-and-hold movements so Gyro auto-correction can fix it; if it persists, record a CSV."
         }
         verticalPosition = positionCalculator.verticalPosition
         if isCountingReps {
             updateRepCount(with: motion)
         }
+    }
+
+    /// Sample-rate bookkeeping, latest raw sample, and recording.
+    private func recordArrival(of sample: MotionSample) {
         let now = Date()
         sampleCount += 1
         lastSampleDate = now
@@ -312,6 +348,17 @@ final class BLEDeviceManager: NSObject, ObservableObject {
             recordedSampleCount = recordedSamples.count
             if recordedSamples.count >= maximumRecordedSamples { stopRecording() }
         }
+    }
+
+    /// Applies a newly learned gyro correction, saves it, and recalibrates (hold still).
+    private func adoptGyroCorrection(_ correction: GyroCorrection) {
+        gyroCorrection = correction
+        if let data = try? JSONEncoder().encode(correction) {
+            UserDefaults.standard.set(data, forKey: Self.gyroCorrectionKey)
+        }
+        gyroCorrectionSummary = correction.summary
+        gyroCorrectionMessage = "Gyro correction applied: \(correction.summary). Recalibrating; hold the sensor still."
+        resetIntegratedAngles()
     }
 
     /// Runs the rep tracker on one processed sample. Only called during a workout.

@@ -16,6 +16,7 @@
 		A10000000000000000000007 /* SensorReadingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SensorReadingsView.swift */; };
 		A10000000000000000000008 /* RepTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* RepTracking.swift */; };
 		A10000000000000000000009 /* MotionFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* MotionFilter.swift */; };
+		A1000000000000000000000A /* GyroAxisCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* GyroAxisCalibrator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		B10000000000000000000009 /* SensorReadingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorReadingsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* RepTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepTracking.swift; sourceTree = "<group>"; };
 		B10000000000000000000011 /* MotionFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionFilter.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* GyroAxisCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GyroAxisCalibrator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,7 @@
 				6424C4D530A158D6004469A0 /* PositionCalculator.swift */,
 				B10000000000000000000010 /* RepTracking.swift */,
 				B10000000000000000000011 /* MotionFilter.swift */,
+				B10000000000000000000012 /* GyroAxisCalibrator.swift */,
 				B10000000000000000000002 /* Models.swift */,
 				B10000000000000000000003 /* BLEDeviceManager.swift */,
 				B10000000000000000000005 /* WorkoutStore.swift */,
@@ -150,6 +153,7 @@
 				6424C4D630A158E2004469A0 /* PositionCalculator.swift in Sources */,
 				A10000000000000000000008 /* RepTracking.swift in Sources */,
 				A10000000000000000000009 /* MotionFilter.swift in Sources */,
+				A1000000000000000000000A /* GyroAxisCalibrator.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* BLEDeviceManager.swift in Sources */,
 				A10000000000000000000005 /* WorkoutStore.swift in Sources */,

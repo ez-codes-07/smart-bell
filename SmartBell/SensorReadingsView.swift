@@ -57,6 +57,7 @@ struct SensorReadingsView: View {
             titleSection
             connectionSection
             summarySection
+            gyroCorrectionSection
             recordingSection
             latestSection
             recentSamplesSection
@@ -84,6 +85,28 @@ struct SensorReadingsView: View {
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var gyroCorrectionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("GYRO AUTO-CORRECTION").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset") { device.resetGyroCorrection() }
+                    .font(.caption.weight(.semibold)).buttonStyle(.bordered)
+                    .accessibilityHint("Forgets the learned gyro correction and recalibrates")
+            }
+            Text(device.gyroCorrectionSummary).font(.subheadline.weight(.semibold))
+            Text(device.gyroCalibrationStatus).font(.caption).foregroundStyle(.secondary)
+            if let message = device.gyroCorrectionMessage {
+                Label(message, systemImage: "wrench.and.screwdriver.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+            }
+            Text("The app compares gyro rotation with the tilt the accelerometer sees and fixes a wrong gyro scale, flipped axis, or swapped axes by itself. To speed it up: start still, tilt the sensor about 60° and hold it still for 2 s, tilt it back and hold, then repeat around a different axis. Curls alone are not enough because they end where they started.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 17))
     }
 
     private var recordingSection: some View {

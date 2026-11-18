@@ -4,9 +4,11 @@
 // Build and run from the repository root:
 //   swiftc -O -o /tmp/smartbell-replay tools/replay/main.swift \
 //     SmartBell/Backend/MotionFilter.swift SmartBell/Backend/PositionCalculator.swift \
-//     SmartBell/Backend/RepTracking.swift SmartBell/Backend/Models.swift
+//     SmartBell/Backend/RepTracking.swift SmartBell/Backend/GyroAxisCalibrator.swift \
+//     SmartBell/Backend/Models.swift
 //   /tmp/smartbell-replay recording.csv [print-every-n-samples]
 import Foundation
+import simd
 
 guard CommandLine.arguments.count >= 2,
       let text = try? String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8) else {
@@ -48,6 +50,8 @@ var filter = MotionSampleLowPassFilter()
 var stillness = StillnessDetector()
 var integrator = GyroscopeIntegrator()
 var position = PositionCalculator()
+var calibrator = GyroAxisCalibrator()
+var gyroCorrection = GyroCorrection.identity
 var previous = PositionEstimate()
 var wasStill = true
 print("\nt_s     still  pos x/y/z (m)              angles x/y/z (°)        tilt check")
@@ -58,7 +62,7 @@ for (index, sample) in samples.enumerated() {
         print(String(format: "  REJECTED impossible sample at t=%.2f", sample.timestamp))
         continue
     }
-    let filtered = filter.add(sample)
+    let filtered = filter.add(gyroCorrection.apply(to: sample))
     let (corrected, still) = stillness.process(filtered, filterIsWarmedUp: filter.isWarmedUp)
     if stillness.isLearned && !position.isCalibrated {
         position.calibrate(gravity: stillness.learnedGravity)
@@ -66,6 +70,12 @@ for (index, sample) in samples.enumerated() {
         print(String(format: "  CALIBRATED at t=%.2f: up = sensor (%.2f, %.2f, %.2f) m/s², %d windows rejected for movement",
                      sample.timestamp, stillness.learnedGravity.x, stillness.learnedGravity.y, stillness.learnedGravity.z,
                      stillness.rejectedCalibrations))
+    }
+    if stillness.isLearned, let update = calibrator.observe(corrected, isStill: still) {
+        gyroCorrection = GyroCorrection(matrix: update.matrix * gyroCorrection.matrix)
+        print(String(format: "  GYRO CORRECTION adopted at t=%.2f: %@ (recalibrating)", sample.timestamp, gyroCorrection.summary))
+        filter.reset(); stillness.reset(); position.reset(); integrator.reset(); calibrator.reset()
+        continue
     }
     let motion = still
         ? MotionSample(timestamp: corrected.timestamp, deltaTime: corrected.deltaTime,
@@ -89,6 +99,7 @@ for (index, sample) in samples.enumerated() {
     wasStill = still
 }
 print("speed-limit resets (estimate diverged): \(position.divergenceResets)")
+print("gyro correction: \(gyroCorrection.summary); calibrator: \(calibrator.status)")
 print(String(format: "\nlearned: gyro bias (%.3f, %.3f, %.3f) °/s, still limits gyro %.2f °/s accel %.3f m/s²",
              stillness.gyroBias.x, stillness.gyroBias.y, stillness.gyroBias.z,
              stillness.gyroLimit, stillness.accelerationLimit))
