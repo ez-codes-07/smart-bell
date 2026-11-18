@@ -31,11 +31,6 @@ struct GyroscopeIntegrator {
         angles = IntegratedGyroAngles()
         previousRate = nil
     }
-
-    /// Re-expresses the angles relative to `origin`, which then reads as zero.
-    mutating func shiftOrigin(to origin: IntegratedGyroAngles) {
-        angles = IntegratedGyroAngles(x: angles.x - origin.x, y: angles.y - origin.y, z: angles.z - origin.z)
-    }
 }
 
 /// Relative inertial position, initialized at (0, 0, 0) on the first sample.
@@ -76,7 +71,6 @@ struct PositionCalculator {
     private var velocity = SIMD3<Double>(repeating: 0)
     private var movementDuration = 0.0
     private var worldPosition = SIMD3<Double>(repeating: 0)
-    private var rebaseOffset = SIMD3<Double>(repeating: 0)
     /// Recent (sample interval, velocity, movement duration), newest last, so a
     /// zero-velocity point identified slightly after the fact can be applied.
     private var recentStates: [(dt: Double, velocity: SIMD3<Double>, movementDuration: Double,
@@ -174,26 +168,28 @@ struct PositionCalculator {
         self = PositionCalculator(configuration: configuration)
     }
 
-    /// Makes the current position the new origin, preserving attitude, gravity, and
-    /// any movement in progress.
-    mutating func rebasePosition() {
-        rebaseOffset = worldPosition
+    /// Makes the current position the origin (a user-requested re-zero), keeping
+    /// orientation, gravity, and any movement in progress.
+    mutating func zeroPosition() {
+        for index in recentStates.indices { recentStates[index].position -= worldPosition }
+        worldPosition = SIMD3<Double>(repeating: 0)
         publishPosition()
     }
 
-    /// Makes the point `secondsAgo` in the past the new origin, treating it as a
-    /// moment when the dumbbell was at rest (the bottom of a rep), even if it never
-    /// stayed still long enough to be detected. Any velocity estimated there was
-    /// integration error: its linear-growth displacement up to that moment (v·T/2)
-    /// and its constant effect since (v·secondsAgo) are removed, and the drift clock
-    /// restarts from that moment.
-    mutating func rebase(atRestPointSecondsAgo secondsAgo: Double) {
+    /// Removes drift using a moment `secondsAgo` in the past when the dumbbell was
+    /// at rest (the bottom of a rep), even if it never stayed still long enough to be
+    /// detected. Any velocity estimated there was integration error: its linear-growth
+    /// displacement up to that moment (v·T/2) and its constant effect since
+    /// (v·secondsAgo) are removed, and the drift clock restarts from that moment.
+    /// The position origin is unchanged (still the start); returns the corrected
+    /// position at the rest point, for callers that track per-rep travel.
+    @discardableResult
+    mutating func correctDrift(atRestPointSecondsAgo secondsAgo: Double) -> PositionEstimate {
         // Already still: the still-time correction has been applied and position is
         // held, so the current position is the rest point.
         guard movementDuration > 0, !recentStates.isEmpty else {
             recentStates.removeAll()
-            rebasePosition()
-            return
+            return position
         }
         var index = recentStates.count - 1
         var elapsed = 0.0
@@ -209,9 +205,9 @@ struct PositionCalculator {
             velocity -= state.velocity
             movementDuration = elapsed
         }
-        rebaseOffset = restPosition
         recentStates.removeAll()
         publishPosition()
+        return PositionEstimate(x: restPosition.x, y: restPosition.y, z: restPosition.z)
     }
 
     private mutating func recordState(dt: Double) {
@@ -220,8 +216,7 @@ struct PositionCalculator {
     }
 
     private mutating func publishPosition() {
-        let relative = worldPosition - rebaseOffset
-        position = PositionEstimate(x: relative.x, y: relative.y, z: relative.z)
+        position = PositionEstimate(x: worldPosition.x, y: worldPosition.y, z: worldPosition.z)
     }
 
     private static func rotationAligning(_ source: SIMD3<Double>, to target: SIMD3<Double>) -> simd_double3x3 {

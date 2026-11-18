@@ -91,6 +91,19 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         if usingDemo { usingDemo = false; isConnected = false; state = "Disconnected" }
     }
 
+    /// User-requested re-zero of displayed position and angles. The rep tracker
+    /// restarts its baseline here too, so a rep in progress is not counted.
+    func zeroPositionAndAngles() {
+        positionCalculator.zeroPosition()
+        gyroIntegrator.reset()
+        estimatedPosition = positionCalculator.position
+        verticalPosition = positionCalculator.verticalPosition
+        integratedGyroAngles = gyroIntegrator.angles
+        repTracker.rebaseForNextRep(position: estimatedPosition, verticalPosition: verticalPosition,
+                                    angles: integratedGyroAngles)
+        repTrackingProgress = repTracker.progress
+    }
+
     func resetRepCounting(for exercise: Exercise) {
         repTracker.reset(for: exercise)
         repCount = 0
@@ -192,19 +205,17 @@ final class BLEDeviceManager: NSObject, ObservableObject {
         let updatedRepCount = repTracker.update(sample: motion, position: estimatedPosition,
                                                 verticalPosition: verticalPosition, angles: integratedGyroAngles)
         if repTracker.isReadyForNextRep {
-            // The counted rep's lowering has finished. Re-zero the local position
-            // and displayed angle baselines before the next repetition. (Doing this
-            // at the moment of counting, part-way down, caused double counts.)
-            // The rep's bottom was a moment of zero velocity: re-zero position and
-            // angles there, and use it to remove drift even when the user never
-            // pauses long enough to be detected as still.
-            positionCalculator.rebase(atRestPointSecondsAgo: repTracker.secondsSinceRepBottom)
-            gyroIntegrator.shiftOrigin(to: repTracker.anglesAtRepBottom)
+            // The counted rep's lowering has finished. Its bottom was a moment of zero
+            // velocity: use it to remove drift even when the user never pauses long
+            // enough to be detected as still, and start the next rep's baseline there.
+            // Displayed position and angles keep their session-start origin; only the
+            // rep tracker's baseline moves (re-zeroing the display made a held
+            // dumbbell appear to snap back to zero).
+            let restPosition = positionCalculator.correctDrift(atRestPointSecondsAgo: repTracker.secondsSinceRepBottom)
             estimatedPosition = positionCalculator.position
             verticalPosition = positionCalculator.verticalPosition
-            integratedGyroAngles = gyroIntegrator.angles
-            repTracker.rebaseForNextRep(position: PositionEstimate(), verticalPosition: 0,
-                                        angles: IntegratedGyroAngles())
+            repTracker.rebaseForNextRep(position: restPosition, verticalPosition: restPosition.z,
+                                        angles: repTracker.anglesAtRepBottom)
         }
         repCount = updatedRepCount
         repTrackingProgress = repTracker.progress

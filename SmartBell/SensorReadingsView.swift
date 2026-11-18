@@ -144,7 +144,7 @@ struct SensorReadingsView: View {
             AxisAngleReading(label: "X", value: device.integratedGyroAngles.x)
             AxisAngleReading(label: "Y", value: device.integratedGyroAngles.y)
             AxisAngleReading(label: "Z", value: device.integratedGyroAngles.z)
-            Text("Integrated from the filtered, bias-corrected gyro rate and held while still. Re-zeroed at the bottom of each counted rep. Relative angles, not absolute orientation.")
+            Text("Integrated from the filtered, bias-corrected gyro rate and held while still. Relative to start (or the last Zero), not absolute orientation.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -152,14 +152,21 @@ struct SensorReadingsView: View {
     private func positionSection(_ sample: MotionSample) -> some View {
         Group {
             Divider().padding(.vertical, 2)
-            Text("ESTIMATED POSITION · RELATIVE TO START")
-                .font(.caption.weight(.bold)).tracking(1.0).foregroundStyle(.secondary)
+            HStack {
+                Text("ESTIMATED POSITION · RELATIVE TO START")
+                    .font(.caption.weight(.bold)).tracking(1.0).foregroundStyle(.secondary)
+                Spacer()
+                Button("Zero") { device.zeroPositionAndAngles() }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Sets the current position and angles to zero")
+            }
             PositionAxisReading(label: "X", value: device.estimatedPosition.x)
             PositionAxisReading(label: "Y", value: device.estimatedPosition.y)
             PositionAxisReading(label: "Z", value: device.estimatedPosition.z)
             PositionAxisReading(label: "Vertical", value: device.verticalPosition)
             InteractivePositionPlot(points: positionTrail)
-            Text("Experimental: filtered acceleration is double-integrated while moving. When the sensor is still (or at the bottom of a rep), velocity is reset and accumulated drift removed, so position holds. Vertical is the most reliable axis; X/Y can drift during long continuous movement.")
+            Text("Experimental: filtered acceleration is double-integrated while moving. When the sensor is still (or at the bottom of a rep), velocity is reset and accumulated drift removed, so position holds. Small errors can add up over a long set; use Zero to re-zero. Vertical is the most reliable axis; X/Y drift more.")
                 .font(.caption).foregroundStyle(.secondary)
             Text(String(format: "Sample interval Δt · %.6f s", sample.deltaTime))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
