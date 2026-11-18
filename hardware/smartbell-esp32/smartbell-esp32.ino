@@ -13,6 +13,9 @@ static constexpr char DATA_UUID[]    = "7b7e0002-9d8b-4f2a-a2b0-5c4e1a000001";
 const int SDA_PIN = 21;
 const int SCL_PIN = 22;
 static constexpr uint32_t SAMPLE_PERIOD_US = 10000;  // 100 Hz target
+// true: print every CSV row over USB serial at 921600 baud, for live analysis on a
+// computer (tools/live). false: print every 10th row at 115200 for a serial monitor.
+static constexpr bool SERIAL_FULL_RATE = true;
 
 uint32_t nextSampleDueUs = 0;
 uint32_t previousSampleTimeUs = 0;
@@ -27,7 +30,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 };
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_FULL_RATE ? 921600 : 115200);
   delay(1000);
 
   Wire.begin(SDA_PIN, SCL_PIN);
@@ -105,9 +108,10 @@ void loop() {
   dataCharacteristic->setValue((uint8_t*)row, strlen(row));
   dataCharacteristic->notify();
 
-  // Throttle serial logging so diagnostics don't dominate the 100 Hz loop.
+  // Full rate feeds tools/live (~6 kB/s fits easily at 921600 baud); otherwise
+  // throttle so diagnostics don't dominate the 100 Hz loop.
   static uint8_t serialDivider = 0;
-  if (++serialDivider >= 10) {
+  if (SERIAL_FULL_RATE || ++serialDivider >= 10) {
     Serial.print(row);
     serialDivider = 0;
   }
