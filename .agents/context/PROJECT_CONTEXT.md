@@ -10,7 +10,7 @@ Smart Bell is a native iOS app for dumbbell workout tracking. An inertial sensor
 - `SmartBell/ContentView.swift`: Home, Workout, Device, and History tabs and workout flow.
 - `SmartBell/SensorReadingsView.swift`: temporary diagnostics tab for raw axes, recent samples, sample count/rate, and last-sample age.
 - `SmartBell/Backend/BLEDeviceManager.swift`: CoreBluetooth scan/connect/notify handling and simulated sample source.
-- `SmartBell/Backend/PositionCalculator.swift`: per-axis gyro display integration plus an experimental quaternion-based relative position estimator, gravity-aligned world Z, stationary accelerometer tilt correction and gravity adaptation, zero-velocity updates, and double integration.
+- `SmartBell/Backend/PositionCalculator.swift`: per-axis gyro display integration plus an experimental quaternion-based relative position estimator with gravity-aligned world Z. Position uses a ~10 s sliding window of world-frame acceleration: FFT band-pass (0.1–0.25 Hz high-pass, 5–8 Hz low-pass) → IFFT, double integration, and per-window linear detrend, read 0.5 s behind the newest sample. There is no stationary threshold or zero-velocity update; output is a band-limited, zero-mean relative displacement.
 - `SmartBell/Backend/RepTracking.swift`: exercise-specific experimental rep algorithms for bicep curls and shoulder presses. Curls use gyro-angle excursion/return because the inertial height estimate is too drift-prone; presses use a position-led stroke, angle confirmation, top reversal, and return.
 - `SmartBell/Backend/Models.swift`: motion samples (including sensor delta time), exercise, and workout data types plus BLE configuration.
 - `SmartBell/Backend/WorkoutStore.swift`: local workout persistence via UserDefaults.

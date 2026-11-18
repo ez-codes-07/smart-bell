@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 import simd
 
@@ -40,21 +41,70 @@ struct PositionEstimate: Equatable {
     var z = 0.0
 }
 
+/// Tuning for the frequency-domain position estimator. All values are provisional:
+/// defaults were chosen against synthetic curl motion with injected noise and bias,
+/// and must be re-tuned against labeled hardware recordings.
+struct FrequencyDomainPositionConfiguration {
+    /// Sliding-window length in samples. Must be a power of two. 1024 samples is
+    /// about 10 s at 100 Hz, enough to hold several repetitions.
+    var windowLength = 1024
+    /// Band-pass edges in Hz. Content below `highPassStop` (gravity residue, bias,
+    /// and slow tilt drift) is removed; content above `lowPassStop` (sensor noise
+    /// and vibration) is removed. Raised-cosine ramps between start/stop limit ringing.
+    var highPassStop = 0.10
+    var highPassPass = 0.25
+    var lowPassPass = 5.0
+    var lowPassStop = 8.0
+    /// The newest samples of a finite window are the least reliable after filtering,
+    /// so position is read this many samples before the newest one (0.5 s at 100 Hz).
+    /// Smaller values reduce latency but overstate fast movements.
+    var outputLagSamples = 50
+    /// Apply the FFT high-pass to velocity as well as to acceleration. Off by
+    /// default: it understated rep travel in synthetic tests.
+    var highPassVelocity = false
+    /// Order of the least-squares polynomial removed from each window's position
+    /// (0 = mean only, 1 = also unknown start velocity, 2 = also residual
+    /// acceleration bias). This replaces a mirrored FFT high-pass at the position
+    /// stage, which smears the slope discontinuity created by mirroring.
+    var positionDetrendOrder = 1
+    /// Pre-fills the window and replaces missing or implausible `deltaTime` values.
+    var nominalSampleInterval = 0.01
+}
+
+/// Estimates relative position by rotating acceleration into a gravity-aligned
+/// world frame, then band-pass filtering a sliding window with FFT/IFFT and double
+/// integrating it (see `FrequencyDomainDoubleIntegrator`).
+///
+/// There is no stationary threshold or zero-velocity update: drift-causing
+/// low-frequency content (sensor bias, residual gravity from gyro tilt drift) is
+/// removed by the high-pass edge instead, high-frequency noise by the low-pass
+/// edge, and integration constants by a per-window detrend. The trade-off is that
+/// the output is a band-limited, zero-mean displacement over the window, delayed by
+/// `outputLagSamples`; slow or held offsets decay away.
 struct PositionCalculator {
-    private let standardGravity = 9.80665
-    private let stationaryGyroThreshold = 3.0 // degrees/second
-    private let stationaryAccelerationTolerance = 0.4 // m/s² from 1 g
+    private let configuration: FrequencyDomainPositionConfiguration
     private var worldFromInitialSensor: simd_double3x3?
     private var orientationFromCurrentSensor = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
     private var previousGyroRate: SIMD3<Double>?
     private var gravityInWorld: SIMD3<Double>?
-    private var previousLinearAcceleration: SIMD3<Double>?
-    private var velocity = SIMD3<Double>(repeating: 0)
+    private var history: AccelerationHistory
+    private let integrator: FrequencyDomainDoubleIntegrator
+    private var filteredPosition = SIMD3<Double>(repeating: 0)
+    private var rebaseOffset = SIMD3<Double>(repeating: 0)
     private(set) var position = PositionEstimate()
 
     /// Position along the gravity-aligned world Z axis established at startup.
     var verticalPosition: Double {
         position.z
+    }
+
+    init(configuration: FrequencyDomainPositionConfiguration = FrequencyDomainPositionConfiguration()) {
+        precondition(configuration.windowLength >= 64 && configuration.windowLength.nonzeroBitCount == 1,
+                     "windowLength must be a power of two of at least 64")
+        self.configuration = configuration
+        history = AccelerationHistory(capacity: configuration.windowLength,
+                                      nominalSampleInterval: configuration.nominalSampleInterval)
+        integrator = FrequencyDomainDoubleIntegrator(configuration: configuration)
     }
 
     mutating func add(_ sample: MotionSample) -> PositionEstimate {
@@ -85,62 +135,25 @@ struct PositionCalculator {
         }
         self.previousGyroRate = gyroRate
 
-        let rotationSensorToInitialSensor = simd_double3x3(orientationFromCurrentSensor)
-        let rotationSensorToWorld = worldFromInitialSensor! * rotationSensorToInitialSensor
+        let rotationSensorToWorld = worldFromInitialSensor! * simd_double3x3(orientationFromCurrentSensor)
         let worldAcceleration = rotationSensorToWorld * sensorAcceleration
 
-        // Establish the initial gravity estimate after aligning world Z.
+        // A fixed startup gravity reference is enough: any residual (gyro tilt
+        // drift, accelerometer bias) is slow and is removed by the high-pass edge.
         if gravityInWorld == nil {
             gravityInWorld = worldAcceleration
-            previousLinearAcceleration = SIMD3<Double>(repeating: 0)
-            return position
         }
+        history.append(worldAcceleration - gravityInWorld!, deltaTime: sample.deltaTime)
 
-        let appearsStationary = sample.gyroMagnitude < stationaryGyroThreshold &&
-            abs(sample.accelerationMagnitude - standardGravity) < stationaryAccelerationTolerance
-        if appearsStationary {
-            // Correct accumulated gyro tilt from measured gravity while still.
-            // This constrains roll/pitch drift before the next movement; yaw remains
-            // unobservable without a magnetometer, but does not change world Z.
-            let measuredGravityDirection = simd_normalize(worldAcceleration)
-            let correctionInWorld = Self.rotationAligning(
-                measuredGravityDirection,
-                to: SIMD3<Double>(0, 0, 1)
-            )
-            let alignment = worldFromInitialSensor!
-            let correctionInInitialSensor = alignment.transpose * correctionInWorld * alignment
-            let correctedOrientation = correctionInInitialSensor * simd_double3x3(orientationFromCurrentSensor)
-            orientationFromCurrentSensor = simd_normalize(simd_quatd(correctedOrientation))
-            let correctedWorldAcceleration = alignment * correctedOrientation * sensorAcceleration
-
-            // Adapt gravity and apply a zero-velocity update while still.
-            let gravityFollowRate = 0.02
-            gravityInWorld = gravityInWorld! * (1 - gravityFollowRate) + correctedWorldAcceleration * gravityFollowRate
-            previousLinearAcceleration = SIMD3<Double>(repeating: 0)
-            velocity = SIMD3<Double>(repeating: 0)
-            return position
-        }
-
-        // Transform world gravity back into sensor coordinates with Rᵀ, subtract it
-        // there, then rotate the gravity-free acceleration into the world frame.
-        let gravityInSensor = rotationSensorToWorld.transpose * gravityInWorld!
-        let linearAcceleration = rotationSensorToWorld * (sensorAcceleration - gravityInSensor)
-        if let previousLinearAcceleration {
-            let dt = sample.deltaTime
-            guard dt.isFinite, dt > 0, dt <= 0.1 else {
-                self.previousLinearAcceleration = linearAcceleration
-                return position
-            }
-
-            // Trapezoidal integration, first to velocity and then to position.
-            let previousVelocity = velocity
-            velocity += (previousLinearAcceleration + linearAcceleration) * (0.5 * dt)
-            let displacement = (previousVelocity + velocity) * (0.5 * dt)
-            position.x += displacement.x
-            position.y += displacement.y
-            position.z += displacement.z
-        }
-        previousLinearAcceleration = linearAcceleration
+        let readIndex = configuration.windowLength - 1 - configuration.outputLagSamples
+        let sampleRate = 1 / history.meanSampleInterval
+        filteredPosition = SIMD3<Double>(
+            integrator.displacement(of: history.chronological(axis: 0), sampleRate: sampleRate, readIndex: readIndex),
+            integrator.displacement(of: history.chronological(axis: 1), sampleRate: sampleRate, readIndex: readIndex),
+            integrator.displacement(of: history.chronological(axis: 2), sampleRate: sampleRate, readIndex: readIndex)
+        )
+        let relative = filteredPosition - rebaseOffset
+        position = PositionEstimate(x: relative.x, y: relative.y, z: relative.z)
         return position
     }
 
@@ -149,16 +162,17 @@ struct PositionCalculator {
         orientationFromCurrentSensor = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
         previousGyroRate = nil
         gravityInWorld = nil
-        previousLinearAcceleration = nil
-        velocity = SIMD3<Double>(repeating: 0)
+        history.reset()
+        filteredPosition = SIMD3<Double>(repeating: 0)
+        rebaseOffset = SIMD3<Double>(repeating: 0)
         position = PositionEstimate()
     }
 
-    /// Starts a fresh relative-position segment while preserving attitude and gravity references.
+    /// Starts a fresh relative-position segment while preserving attitude, gravity,
+    /// and the filter window. The current filtered position becomes the new origin.
     mutating func rebasePosition() {
+        rebaseOffset = filteredPosition
         position = PositionEstimate()
-        velocity = SIMD3<Double>(repeating: 0)
-        previousLinearAcceleration = SIMD3<Double>(repeating: 0)
     }
 
     private static func rotationAligning(_ source: SIMD3<Double>, to target: SIMD3<Double>) -> simd_double3x3 {
@@ -181,5 +195,207 @@ struct PositionCalculator {
             SIMD3<Double>(-axis.y, axis.x, 0)
         ])
         return matrix_identity_double3x3 + skew + (skew * skew) * ((1 - cosine) / sineSquared)
+    }
+}
+
+/// Fixed-length ring buffer of gravity-free world acceleration. It starts filled
+/// with zeros, matching the assumption that the sensor is still at startup.
+private struct AccelerationHistory {
+    private let capacity: Int
+    private let nominalSampleInterval: Double
+    private var axes: [[Double]]
+    private var intervals: [Double]
+    private var intervalSum: Double
+    private var writeIndex = 0
+
+    init(capacity: Int, nominalSampleInterval: Double) {
+        self.capacity = capacity
+        self.nominalSampleInterval = nominalSampleInterval
+        axes = Array(repeating: Array(repeating: 0, count: capacity), count: 3)
+        intervals = Array(repeating: nominalSampleInterval, count: capacity)
+        intervalSum = nominalSampleInterval * Double(capacity)
+    }
+
+    /// The FFT assumes uniform sampling, so the window's mean interval is used.
+    var meanSampleInterval: Double {
+        intervalSum / Double(capacity)
+    }
+
+    mutating func append(_ acceleration: SIMD3<Double>, deltaTime: Double) {
+        axes[0][writeIndex] = acceleration.x
+        axes[1][writeIndex] = acceleration.y
+        axes[2][writeIndex] = acceleration.z
+        let interval = deltaTime.isFinite && deltaTime > 0 && deltaTime <= 0.1 ? deltaTime : nominalSampleInterval
+        intervalSum += interval - intervals[writeIndex]
+        intervals[writeIndex] = interval
+        writeIndex = (writeIndex + 1) % capacity
+    }
+
+    /// Oldest-to-newest samples for one axis.
+    func chronological(axis: Int) -> ArraySlice<Double> {
+        axes[axis][writeIndex...] + axes[axis][..<writeIndex]
+    }
+
+    mutating func reset() {
+        self = AccelerationHistory(capacity: capacity, nominalSampleInterval: nominalSampleInterval)
+    }
+}
+
+/// Band-pass filtering and double integration of a uniformly sampled window using
+/// real FFT/IFFT filtering. Each filter pass mirrors the window (even extension)
+/// so the periodic signal the FFT assumes has no jump at the window edges.
+///
+/// Pipeline: acceleration → FFT band-pass → IFFT → integrate → velocity →
+/// (FFT high-pass → IFFT) → integrate → position → remove least-squares polynomial.
+/// The band-pass removes bias, gravity residue, and noise; the velocity high-pass
+/// and position detrend remove the unknown integration constants and drift ramps.
+final class FrequencyDomainDoubleIntegrator {
+    private let configuration: FrequencyDomainPositionConfiguration
+    private let windowLength: Int
+    private let transformLength: Int
+    private let log2Length: vDSP_Length
+    private let fftSetup: FFTSetupD
+    private var signal: [Double]
+    private var extended: [Double]
+    private var real: [Double]
+    private var imaginary: [Double]
+    private var bandPassGains: [Double] = []
+    private var highPassGains: [Double] = []
+    private var gainSampleRate = 0.0
+
+    init(configuration: FrequencyDomainPositionConfiguration) {
+        self.configuration = configuration
+        windowLength = configuration.windowLength
+        transformLength = windowLength * 2
+        log2Length = vDSP_Length(transformLength.trailingZeroBitCount)
+        guard let fftSetup = vDSP_create_fftsetupD(log2Length, FFTRadix(kFFTRadix2)) else {
+            fatalError("Unable to create FFT setup for length \(transformLength)")
+        }
+        self.fftSetup = fftSetup
+        signal = Array(repeating: 0, count: windowLength)
+        extended = Array(repeating: 0, count: transformLength)
+        real = Array(repeating: 0, count: windowLength)
+        imaginary = Array(repeating: 0, count: windowLength)
+    }
+
+    deinit {
+        vDSP_destroy_fftsetupD(fftSetup)
+    }
+
+    /// Returns the displacement (in the acceleration's length unit) at `readIndex`
+    /// of the window, where index 0 is the oldest sample.
+    func displacement<C: Collection>(of acceleration: C, sampleRate: Double, readIndex: Int) -> Double
+    where C.Element == Double {
+        precondition(acceleration.count == windowLength)
+        updateGainsIfNeeded(sampleRate: sampleRate)
+        let dt = 1 / sampleRate
+
+        for (index, value) in acceleration.enumerated() { signal[index] = value }
+        filterSignal(with: bandPassGains)
+        integrateSignal(dt: dt)            // velocity
+        if configuration.highPassVelocity { filterSignal(with: highPassGains) }
+        integrateSignal(dt: dt)            // position
+        return signal[readIndex] - polynomialFit(order: configuration.positionDetrendOrder, at: readIndex)
+    }
+
+    /// Least-squares polynomial fit of `signal` (order 0–2), evaluated at `index`.
+    /// Uses a centered, normalized abscissa for numerical stability.
+    private func polynomialFit(order: Int, at index: Int) -> Double {
+        let order = min(max(order, 0), 2)
+        let center = Double(windowLength - 1) / 2
+        var normal = simd_double3x3(0)
+        var moments = SIMD3<Double>(repeating: 0)
+        for sampleIndex in 0..<windowLength {
+            let u = (Double(sampleIndex) - center) / center
+            let basis = SIMD3<Double>(1, order >= 1 ? u : 0, order >= 2 ? u * u : 0)
+            normal += simd_double3x3(columns: (basis * basis.x, basis * basis.y, basis * basis.z))
+            moments += basis * signal[sampleIndex]
+        }
+        // Unused orders have zero basis entries; give them a unit diagonal so the
+        // normal matrix stays invertible and their coefficients solve to zero.
+        for unused in stride(from: order + 1, to: 3, by: 1) { normal[unused, unused] = 1 }
+        let coefficients = normal.inverse * moments
+        let u = (Double(index) - center) / center
+        return coefficients.x + coefficients.y * u + coefficients.z * u * u
+    }
+
+    /// Cumulative trapezoidal integral of `signal`, starting from zero.
+    private func integrateSignal(dt: Double) {
+        var previous = signal[0]
+        signal[0] = 0
+        for index in 1..<windowLength {
+            let current = signal[index]
+            signal[index] = signal[index - 1] + (previous + current) * 0.5 * dt
+            previous = current
+        }
+    }
+
+    /// Mirror `signal`, multiply its spectrum by `gains`, and write the first half
+    /// of the inverse transform back into `signal`.
+    private func filterSignal(with gains: [Double]) {
+        for index in 0..<windowLength {
+            extended[index] = signal[index]
+            extended[transformLength - 1 - index] = signal[index]
+        }
+
+        let halfLength = windowLength
+        real.withUnsafeMutableBufferPointer { realPointer in
+            imaginary.withUnsafeMutableBufferPointer { imaginaryPointer in
+                var split = DSPDoubleSplitComplex(realp: realPointer.baseAddress!,
+                                                  imagp: imaginaryPointer.baseAddress!)
+                extended.withUnsafeBufferPointer { extendedPointer in
+                    extendedPointer.baseAddress!.withMemoryRebound(to: DSPDoubleComplex.self,
+                                                                    capacity: halfLength) {
+                        vDSP_ctozD($0, 2, &split, 1, vDSP_Length(halfLength))
+                    }
+                }
+
+                vDSP_fft_zripD(fftSetup, &split, 1, log2Length, FFTDirection(kFFTDirection_Forward))
+
+                // Packed real-FFT layout: realp[0] = DC, imagp[0] = Nyquist,
+                // then bins 1..<N/2 as complex pairs.
+                realPointer[0] *= gains[0]
+                imaginaryPointer[0] *= gains[halfLength]
+                for bin in 1..<halfLength {
+                    realPointer[bin] *= gains[bin]
+                    imaginaryPointer[bin] *= gains[bin]
+                }
+
+                vDSP_fft_zripD(fftSetup, &split, 1, log2Length, FFTDirection(kFFTDirection_Inverse))
+
+                extended.withUnsafeMutableBufferPointer { extendedPointer in
+                    extendedPointer.baseAddress!.withMemoryRebound(to: DSPDoubleComplex.self,
+                                                                    capacity: halfLength) {
+                        vDSP_ztocD(&split, 1, $0, 2, vDSP_Length(halfLength))
+                    }
+                }
+            }
+        }
+
+        // vDSP's packed real forward+inverse round trip scales by 2 × transform length.
+        let scale = 1 / Double(2 * transformLength)
+        for index in 0..<windowLength { signal[index] = extended[index] * scale }
+    }
+
+    /// Per-bin gains, from DC (index 0) to Nyquist (index windowLength).
+    /// DC is always zero, which removes constant offsets and integration constants.
+    private func updateGainsIfNeeded(sampleRate: Double) {
+        guard bandPassGains.isEmpty || abs(sampleRate - gainSampleRate) > gainSampleRate * 0.01 else { return }
+        gainSampleRate = sampleRate
+        let binWidth = sampleRate / Double(transformLength)
+        let frequencies = (0...windowLength).map { Double($0) * binWidth }
+        highPassGains = frequencies.map {
+            Self.raisedCosineStep($0, from: configuration.highPassStop, to: configuration.highPassPass)
+        }
+        bandPassGains = zip(frequencies, highPassGains).map { frequency, highPass in
+            highPass * (1 - Self.raisedCosineStep(frequency, from: configuration.lowPassPass, to: configuration.lowPassStop))
+        }
+    }
+
+    /// 0 at or below `start`, 1 at or above `end`, with a smooth half-cosine between.
+    private static func raisedCosineStep(_ value: Double, from start: Double, to end: Double) -> Double {
+        if value <= start { return 0 }
+        if value >= end { return 1 }
+        return 0.5 - 0.5 * cos(Double.pi * (value - start) / (end - start))
     }
 }
